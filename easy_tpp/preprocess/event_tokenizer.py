@@ -425,7 +425,7 @@ class EventTokenizer:
         if return_attention_mask:
             # attention_mask
             batch_output[self.model_input_names[4]] = self.make_attn_mask_for_pad_sequence(
-                batch_output[self.model_input_names[2]],
+                np.array(batch_output[self.model_input_names[2]]),
                 self.pad_token_id)
         else:
             batch_output[self.model_input_names[4]] = []
