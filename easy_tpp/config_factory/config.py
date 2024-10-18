@@ -33,6 +33,21 @@ class Config(Registrable):
         logger.critical(f'Load pipeline config class {config_cls.__name__}')
         return config_cls.parse_from_yaml_config(config, **kwargs)
 
+    @staticmethod
+    def build_from_dict(config, **kwargs):
+        """Load yaml config from dict.
+
+        Args:
+            yaml_fn (str): Path of the yaml config file.
+
+        Returns:
+            EasyTPP.Config: Config object corresponding to cls.
+        """
+        pipeline_config = config.get('pipeline_config_id')
+        config_cls = Config.by_name(pipeline_config.lower())
+        logger.critical(f'Load pipeline config class {config_cls.__name__}')
+        return config_cls.parse_from_yaml_config(config, **kwargs)
+
     @abstractmethod
     def get_yaml_config(self):
         """Get the yaml format config from self.
