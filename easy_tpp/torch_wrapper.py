@@ -142,3 +142,34 @@ class TorchModelWrapper:
             label_dtime = label_dtime.detach().cpu().numpy()
             label_type = label_type.detach().cpu().numpy()
             return (pred_dtime, pred_type), (label_dtime, label_type)
+
+
+    def run_batch_probability(self, batch, phase):
+        """Run one batch get probabilities only for the last event in the sequence
+
+        Args:
+            batch (EasyTPP.BatchEncoding): preprocessed batch data that go into the model.
+            phase (RunnerPhase): a const that defines the stage of model runner.
+
+        Returns:
+            tuple: for training and validation we return loss, prediction and labels;
+            for prediction we return prediction.
+        """
+
+        batch = batch.to(self.device).values()
+        if phase is not RunnerPhase.PREDICT:
+            return None
+        
+        # [batch_size, seq_len, num_samples_boundary, event_num]
+        dtimes_probs_pred, types_probs_pred, dtime_samples, dtimes_mean_pred, types_mean_pred, label_time, label_dtime, label_type = self.model.predict_probabilities_one_step_since_last_event(batch=batch)
+        ll_loss, _ = self.model.loglike_loss(batch=batch)
+        loglikelihood = (-ll_loss).detach().cpu().numpy()
+        dtimes_probs_pred = dtimes_probs_pred.detach().cpu().numpy()
+        dtime_samples = dtime_samples.detach().cpu().numpy() 
+        types_probs_pred = types_probs_pred.detach().cpu().numpy()
+        dtimes_mean_pred = dtimes_mean_pred.detach().cpu().numpy()
+        types_mean_pred = types_mean_pred.detach().cpu().numpy()
+        label_dtime = label_dtime.detach().cpu().numpy()
+        label_time = label_time.detach().cpu().numpy()
+        label_type = label_type.detach().cpu().numpy()
+        return dtimes_probs_pred, types_probs_pred, dtime_samples, loglikelihood, dtimes_mean_pred, types_mean_pred, (label_time, label_dtime, label_type)

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.distributions as D
 
 from easy_tpp.model.torch_model.torch_baselayer import EncoderLayer, MultiHeadAttention, TimePositionalEncoding, ScaledSoftplus
 from easy_tpp.model.torch_model.torch_basemodel import TorchBaseModel
@@ -24,6 +25,15 @@ class THP(TorchBaseModel):
         self.n_layers = model_config.num_layers
         self.n_head = model_config.num_heads
         self.dropout = model_config.dropout_rate
+
+        # create a transformation for dtimes being using for loglike_loss
+        #self.mean_inter_time = model_config.get("mean_inter_time", 0.0)
+        #self.std_inter_time = model_config.get("std_inter_time", 1.0) 
+        #if self.mean_inter_time == 0.0 and self.std_inter_time == 1.0:
+        #    self.transform = None
+        #else:
+        self.transform = D.AffineTransform(loc=0, scale=self.gen_config.dtime_max/10)
+
 
         self.layer_temporal_encoding = TimePositionalEncoding(self.d_model, device=self.device)
 
@@ -99,6 +109,9 @@ class THP(TorchBaseModel):
         factor_intensity_decay = self.factor_intensity_decay[None, ...]
         factor_intensity_base = self.factor_intensity_base[None, ...]
 
+        # transform time_delta_seqs
+        time_delta_seqs = self.transform.inv(time_delta_seqs)
+
         # update time decay based on Equation (6)
         # [batch_size, seq_len, num_event_types]
         intensity_states = factor_intensity_decay * time_delta_seqs[:, 1:, None] + self.layer_intensity_hidden(
@@ -142,6 +155,9 @@ class THP(TorchBaseModel):
 
         # [batch_size, seq_len, num_samples, 1]
         sample_dtimes = sample_dtimes[..., None]
+
+        # transform sample_dtimes
+        sample_dtimes = self.transform.inv(sample_dtimes)
 
         # [1, 1, 1, num_event_types]
         factor_intensity_decay = self.factor_intensity_decay[None, None, ...]

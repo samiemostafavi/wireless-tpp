@@ -20,8 +20,8 @@ def rmse_metric_function(predictions, labels, **kwargs):
 
     # apply the mask and remove the first element since it is repeated
     if len(seq_mask) > 0:
-        pred = np.array(predictions[PredOutputIndex.TimePredIndex][seq_mask])[:, 1:]
-        label = np.array(labels[PredOutputIndex.TimePredIndex][seq_mask])[:, 1:]
+        pred = np.array(predictions[PredOutputIndex.TimePredIndex][seq_mask])
+        label = np.array(labels[PredOutputIndex.TimePredIndex][seq_mask])
     else:
         pred = np.array(predictions[PredOutputIndex.TimePredIndex])[:, 1:]
         label = np.array(labels[PredOutputIndex.TimePredIndex])[:, 1:]
@@ -45,8 +45,8 @@ def acc_metric_function(predictions, labels, **kwargs):
 
     # apply the mask and remove the first element since it is repeated
     if len(seq_mask) > 0:
-        pred = np.array(predictions[PredOutputIndex.TimePredIndex][seq_mask])[:, 1:]
-        label = np.array(labels[PredOutputIndex.TimePredIndex][seq_mask])[:, 1:]
+        pred = np.array(predictions[PredOutputIndex.TimePredIndex][seq_mask])
+        label = np.array(labels[PredOutputIndex.TimePredIndex][seq_mask])
     else:
         pred = np.array(predictions[PredOutputIndex.TimePredIndex])[:, 1:]
         label = np.array(labels[PredOutputIndex.TimePredIndex])[:, 1:]

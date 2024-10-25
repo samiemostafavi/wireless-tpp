@@ -23,9 +23,14 @@ class TorchBaseModel(nn.Module):
         self.pad_token_id = model_config.pad_token_id
         self.eps = torch.finfo(torch.float32).eps
 
-        self.layer_type_emb = nn.Embedding(self.num_event_types_pad,  # have padding
-                                           self.hidden_size,
-                                           padding_idx=self.pad_token_id)
+        self.is_prior = model_config.model_specs.get('prior', False)
+
+        if not self.is_prior:
+            self.layer_type_emb = nn.Embedding(self.num_event_types_pad,  # have padding
+                                            self.hidden_size,
+                                            padding_idx=self.pad_token_id)
+        else:
+            self.layer_type_emb = None
 
         self.gen_config = model_config.thinning
         self.event_sampler = None
@@ -265,3 +270,83 @@ class TorchBaseModel(nn.Module):
 
         return time_delta_seq[:, -num_step - 1:], event_seq[:, -num_step - 1:], \
                time_delta_seq_label[:, -num_step - 1:], event_seq_label[:, -num_step - 1:]
+
+
+    def predict_probabilities_one_step_since_last_event(self, batch, forward=False):
+        """Single-step event probability prediction since last event in the sequence.
+
+        Args:
+            time_seqs (tensor): [batch_size, seq_len].
+            time_delta_seqs (tensor): [batch_size, seq_len].
+            type_seqs (tensor): [batch_size, seq_len].
+
+        Returns:
+            tuple: tensors of dtime and type prediction, [batch_size, seq_len].
+        """
+        time_seq_label, time_delta_seq_label, event_seq_label, batch_non_pad_mask_label, type_mask_label = batch
+
+        if not forward:
+            time_seq = time_seq_label[:, :-1]
+            time_delta_seq = time_delta_seq_label[:, :-1]
+            event_seq = event_seq_label[:, :-1]
+        else:
+            time_seq, time_delta_seq, event_seq = time_seq_label, time_delta_seq_label, event_seq_label
+
+        #if type(self).__name__ == 'IntensityFree':
+        #    probs_t = self.predict_prob_at_every_event(batch)
+        #    return probs_t, time_delta_seq_label[:, -2:], event_seq_label[:, -2:]
+        #else:
+
+        # Expand dimensions to match batch and sequence sizes
+        # time_since_last_event = time_since_last_event[None, None, :]
+        batch_size, seq_len = time_seq.size()
+
+        # Assume you have the time intervals you are interested in
+        # For example, time_since_last_event is a tensor of times since the last event
+        sample_dtime_min, sample_dtime_max, num_samples = self.gen_config.sample_dtime_min, self.gen_config.sample_dtime_max, self.gen_config.num_sample
+        time_since_last_event = torch.linspace(sample_dtime_min, sample_dtime_max, num_samples, device=self.device)
+
+        # Compute intensities at these times
+        intensities = self.compute_intensities_at_sample_times(
+            time_seq,
+            time_delta_seq,
+            event_seq,
+            time_since_last_event,
+            max_steps=seq_len,
+            compute_last_step_only=True
+        )  # Shape: [batch_size, seq_len, num_samples, event_num]
+
+        # seq_len is not relevant since we only look at the last event
+        intensities = intensities[:,-1,:,:]  # Shape: [batch_size, num_samples, event_num]
+
+        # Compute the cumulative intensity over time using cumulative trapezoidal integration
+        delta_t = time_since_last_event[1:] - time_since_last_event[:-1]  # Time differences
+        mid_intensities = (intensities[:, 1:, :] + intensities[:, :-1, :]) / 2  # Average intensities
+
+        # Sum over event types to get total intensity
+        total_intensity = mid_intensities.sum(dim=-1)  # Shape: [batch_size, num_samples - 1]
+
+        # Compute cumulative integral
+        cumulative_intensity = torch.cumsum(total_intensity * delta_t, dim=-1)  # [batch_size, num_samples - 1]
+
+        # Compute survival function
+        survival_function = torch.exp(-cumulative_intensity)  # [batch_size, num_samples - 1]
+
+        # Adjust intensities and survival function to align shapes
+        lambda_t = total_intensity  # [batch_size, num_samples - 1]
+        S_t = survival_function  # [batch_size, num_samples - 1]
+
+        # Compute PDF
+        pdf_t = lambda_t * S_t  # [batch_size, num_samples - 1]
+        dtimes_logcdfs_pred = torch.log(torch.cumsum(pdf_t*delta_t, dim=-1))
+
+        # Compute probabilities for each event type
+        lambda_k_t = intensities[:,1:,:]  # [batch_size, num_samples-1, event_num]
+        lambda_t_total = lambda_k_t.sum(dim=-1, keepdim=True) + self.eps  # [batch_size, num_samples-1, 1]
+        types_probs_pred = (lambda_k_t / lambda_t_total)  # [batch_size, num_samples-1, event_num]
+
+        # FIXME
+        dtime_mean_pred = []
+        type_mean_pred = []
+
+        return dtimes_logcdfs_pred, types_probs_pred, time_since_last_event, dtime_mean_pred, type_mean_pred, time_seq_label, time_delta_seq_label, event_seq_label
