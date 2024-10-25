@@ -61,6 +61,10 @@ class MultiHeadAttention(nn.Module):
             mask = mask.unsqueeze(1)
         nbatches = query.size(0)
 
+        query = query.float()
+        key = key.float()
+        value = value.float()
+
         query, key, value = [
             lin_layer(x).view(nbatches, -1, self.n_head, self.d_k).transpose(1, 2)
             for lin_layer, x in zip(self.linears, (query, key, value))

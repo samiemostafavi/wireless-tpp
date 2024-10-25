@@ -78,6 +78,9 @@ class ThinningConfig(Config):
         self.over_sample_rate = kwargs.get('over_sample_rate', 5)
         self.num_samples_boundary = kwargs.get('num_samples_boundary', 5)
         self.dtime_max = kwargs.get('dtime_max', 5)
+        self.num_sample_mean = kwargs.get('num_sample_mean', 5)
+        self.sample_dtime_max = kwargs.get('sample_dtime_max', 200)
+        self.sample_dtime_min = kwargs.get('sample_dtime_min', 0)
         # we pad the sequence at the front only in multi-step generation
         self.num_step_gen = kwargs.get('num_step_gen', 1)
 
@@ -95,6 +98,9 @@ class ThinningConfig(Config):
                 'over_sample_rate': self.over_sample_rate,
                 'num_samples_boundary': self.num_samples_boundary,
                 'dtime_max': self.dtime_max,
+                'num_sample_mean': self.num_sample_mean,
+                'sample_dtime_max': self.sample_dtime_max,
+                'sample_dtime_min': self.sample_dtime_min,
                 'num_step_gen': self.num_step_gen}
 
     @staticmethod
