@@ -6,7 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from easy_tpp.preprocess.data_collator import TPPDataCollator
 from easy_tpp.preprocess.event_tokenizer import EventTokenizer
-from easy_tpp.utils import py_assert, is_tf_available
+from easy_tpp.utils import py_assert, is_tf_available, logger
 
 
 class TPPDataset(Dataset):
@@ -105,13 +105,19 @@ class TPPDataset(Dataset):
         return TfTPPDataset(self.time_seqs, self.time_delta_seqs, self.type_seqs, **kwargs)
 
     def get_dt_stats(self):
-        x_bar, s_2_x, n = 0., 0., 0
+        x_bar, s_2_x, xp_bar, s_2_xp, n = 0., 0., 0, 0., 0
         min_dt, max_dt = np.inf, -np.inf
+        min_mark, max_mark = np.inf, -np.inf
 
         for dts, marks in zip(self.time_delta_seqs, self.type_seqs):
             dts = np.array(dts[1:-1 if marks[-1] == -1 else None])
+            marks = np.array(marks)
             min_dt = min(min_dt, dts.min())
             max_dt = max(max_dt, dts.max())
+            min_mark = min(min_mark, marks.min())
+            max_mark = max(max_mark, marks.max())
+            yp_bar = marks.mean()
+            s_2_yp = marks.var()
             y_bar = dts.mean()
             s_2_y = dts.var()
             m = dts.shape[0]
@@ -121,10 +127,19 @@ class TPPDataset(Dataset):
                         (n * m * ((x_bar - y_bar) ** 2)) / ((n + m) * (n + m - 1)))
             x_bar = (n * x_bar + m * y_bar) / (n + m)
 
-        print(x_bar, (s_2_x ** 0.5))
-        print(f'min_dt: {min_dt}')
-        print(f'max_dt: {max_dt}')
-        return x_bar, (s_2_x ** 0.5), min_dt, max_dt
+            s_2_xp = (((n - 1) * s_2_xp + (m - 1) * s_2_yp) / (n + m - 1)) + (
+                        (n * m * ((xp_bar - yp_bar) ** 2)) / ((n + m) * (n + m - 1)))
+            xp_bar = (n * xp_bar + m * yp_bar) / (n + m)
+
+        logger.info(f"delta times mean and variance:  {x_bar}, {(s_2_x ** 0.5)}")
+        logger.info(f'min_dt: {min_dt}')
+        logger.info(f'max_dt: {max_dt}')
+
+        logger.info(f"Event types mean and variance: {xp_bar}, {(s_2_xp ** 0.5)}")
+        logger.info(f'min_mark: {min_mark}')
+        logger.info(f'max_mark: {max_mark}')
+
+        return x_bar, (s_2_x ** 0.5), xp_bar, (s_2_xp ** 0.5), min_dt, max_dt, min_mark, max_mark
 
 
 def get_data_loader(dataset: TPPDataset, backend: str, tokenizer: EventTokenizer, **kwargs):

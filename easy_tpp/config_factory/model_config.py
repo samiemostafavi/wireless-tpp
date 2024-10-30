@@ -65,7 +65,6 @@ class TrainerConfig(Config):
                              metrics=self.metrics
                              )
 
-
 class ThinningConfig(Config):
     def __init__(self, **kwargs):
         """Initialize the Config class.
@@ -81,6 +80,8 @@ class ThinningConfig(Config):
         self.num_sample_mean = kwargs.get('num_sample_mean', 5)
         self.sample_dtime_max = kwargs.get('sample_dtime_max', 200)
         self.sample_dtime_min = kwargs.get('sample_dtime_min', 0)
+        self.sample_event_type_max = kwargs.get('sample_event_type_max', 500)
+        self.sample_event_type_min = kwargs.get('sample_event_type_min', 0)
         # we pad the sequence at the front only in multi-step generation
         self.num_step_gen = kwargs.get('num_step_gen', 1)
 
@@ -101,6 +102,8 @@ class ThinningConfig(Config):
                 'num_sample_mean': self.num_sample_mean,
                 'sample_dtime_max': self.sample_dtime_max,
                 'sample_dtime_min': self.sample_dtime_min,
+                'sample_event_type_max': self.sample_event_type_max,
+                'sample_event_type_min': self.sample_event_type_min,
                 'num_step_gen': self.num_step_gen}
 
     @staticmethod
@@ -131,6 +134,61 @@ class ThinningConfig(Config):
                               dtime_max=self.dtime_max,
                               num_step_gen=self.num_step_gen)
 
+class NoiseRegularizationConfig(Config):
+    def __init__(self, **kwargs):
+        """Initialize the Config class.
+        """
+        dtime_dict = kwargs.get('dtime', {})
+        if dtime_dict:
+            self.dtime = {
+                "noise_type" : dtime_dict.get('noise_type', 'gaussian'),
+                "std_dev" : dtime_dict.get('std_dev', 0.1),
+            }
+        else:
+            self.dtime = {
+                "noise_type" : None,
+                "std_dev" : 0,
+            }
+
+        event_type_dict = kwargs.get('event_type', {})
+        if event_type_dict:
+            self.event_type = {
+                "noise_type" : event_type_dict.get('noise_type', 'gaussian'),
+                "std_dev" : event_type_dict.get('std_dev', 0.1),
+            }
+        else:
+            self.event_type = {
+                "noise_type" : None,
+                "std_dev" : 0,
+            }
+
+    def get_yaml_config(self):
+        """Return the config in dict (yaml compatible) format.
+
+        Returns:
+            dict: config of the thinning specs in dict format.
+        """
+        return { 'dtime': self.dtime, 'event_type': self.event_type }
+
+    @staticmethod
+    def parse_from_yaml_config(yaml_config):
+        """Parse from the yaml to generate the config object.
+
+        Args:
+            yaml_config (dict): configs from yaml file.
+
+        Returns:
+            EasyTPP.ThinningConfig: Config class for thinning algorithms.
+        """
+        return NoiseRegularizationConfig(**yaml_config) if yaml_config is not None else None
+
+    def copy(self):
+        """Copy the config.
+
+        Returns:
+            EasyTPP.ThinningConfig: a copy of current config.
+        """
+        return NoiseRegularizationConfig({ 'dtime': self.dtime, 'event_type': self.event_type })
 
 class BaseConfig(Config):
     def __init__(self, **kwargs):
@@ -222,6 +280,7 @@ class ModelConfig(Config):
         self.pretrained_model_dir = kwargs.get('pretrained_model_dir', None)
         self.gpu = kwargs.get('gpu', -1)
         self.model_specs = kwargs.get('model_specs', {})
+        self.noise_regularization = NoiseRegularizationConfig.parse_from_yaml_config(kwargs.get('noise_regularization',{}))
 
     def get_yaml_config(self):
         """Return the config in dict (yaml compatible) format.
@@ -246,7 +305,9 @@ class ModelConfig(Config):
                 'model_id': self.model_id,
                 'pretrained_model_dir': self.pretrained_model_dir,
                 'gpu': self.gpu,
-                'model_specs': self.model_specs}
+                'model_specs': self.model_specs,
+                'noise_regularization': None if self.noise_regularization is None else self.noise_regularization.get_yaml_config()
+                }
 
     @staticmethod
     def parse_from_yaml_config(yaml_config):
@@ -280,4 +341,5 @@ class ModelConfig(Config):
                            event_pad_index=self.pad_token_id,
                            pretrained_model_dir=self.pretrained_model_dir,
                            gpu=self.gpu,
-                           model_specs=self.model_specs)
+                           model_specs=self.model_specs,
+                           noise_regularization=self.noise_regularization)
