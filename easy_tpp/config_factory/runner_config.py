@@ -12,7 +12,7 @@ from easy_tpp.utils.const import Backend
 
 @Config.register('runner_config')
 class RunnerConfig(Config):
-    def __init__(self, base_config, model_config, data_config, trainer_config):
+    def __init__(self, base_config, model_config, data_config, trainer_config, prediction_config = {}):
         """Initialize the Config class.
 
         Args:
@@ -20,11 +20,13 @@ class RunnerConfig(Config):
             model_config (EasyTPP.ModelConfig): ModelConfig object.
             data_config (EasyTPP.DataConfig): DataConfig object.
             trainer_config (EasyTPP.TrainerConfig): TrainerConfig object
+            prediction_config (dict): prediction config.
         """
         self.data_config = data_config
         self.model_config = model_config
         self.base_config = base_config
         self.trainer_config = trainer_config
+        self.prediction_config = prediction_config
 
         self.ensure_valid_config()
         self.update_config()
@@ -44,7 +46,8 @@ class RunnerConfig(Config):
         return {'data_config': self.data_config.get_yaml_config(),
                 'base_config': self.base_config.get_yaml_config(),
                 'model_config': self.model_config.get_yaml_config(),
-                'trainer_config': self.trainer_config.get_yaml_config()}
+                'trainer_config': self.trainer_config.get_yaml_config(),
+                'prediction_config': self.prediction_config }
 
     @staticmethod
     def parse_from_yaml_config(yaml_config, **kwargs):
@@ -79,12 +82,14 @@ class RunnerConfig(Config):
         base_config = BaseConfig.parse_from_yaml_config(yaml_exp_config.get('base_config'))
         model_config = ModelConfig.parse_from_yaml_config(yaml_exp_config.get('model_config'))
         trainer_config = TrainerConfig.parse_from_yaml_config(yaml_exp_config.get('trainer_config'))
+        prediction_config = yaml_exp_config.get('prediction_config', {})
 
         return RunnerConfig(
             data_config=data_config,
             base_config=base_config,
             model_config=model_config,
-            trainer_config=trainer_config
+            trainer_config=trainer_config,
+            prediction_config=prediction_config
         )
 
     def ensure_valid_config(self):
@@ -181,5 +186,6 @@ class RunnerConfig(Config):
             base_config=copy.deepcopy(self.base_config),
             model_config=copy.deepcopy(self.model_config),
             data_config=copy.deepcopy(self.data_config),
-            trainer_config=copy.deepcopy(self.trainer_config)
+            trainer_config=copy.deepcopy(self.trainer_config),
+            prediction_config=copy.deepcopy(self.prediction_config)
         )

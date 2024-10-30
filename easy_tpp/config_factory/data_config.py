@@ -12,7 +12,10 @@ class DataSpecConfig(Config):
         self.padding_strategy = kwargs.get('padding_strategy')
         self.max_len = kwargs.get('max_len')
         self.truncation_strategy = kwargs.get('truncation_strategy')
-        self.num_event_types_pad = self.num_event_types + 1
+        if self.num_event_types is not None:
+            self.num_event_types_pad = self.num_event_types + 1
+        else:
+            self.num_event_types_pad = None
         self.model_input_names = kwargs.get('model_input_names')
 
         if self.padding_side is not None and self.padding_side not in ["right", "left"]:
