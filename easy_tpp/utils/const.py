@@ -44,6 +44,7 @@ class RunnerPhase(ExplicitEnum):
     TRAIN = 'train'
     VALIDATE = 'validate'
     PREDICT = 'predict'
+    EVALUATE = 'evaluate'
 
 
 class LossFunction(ExplicitEnum):

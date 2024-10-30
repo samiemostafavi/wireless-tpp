@@ -20,9 +20,10 @@ class TPPDataLoader:
     def build_input_from_pkl(self, source_dir: str, split: str):
         data = load_pickle(source_dir)
 
-        py_assert(data["dim_process"] == self.num_event_types,
-                  ValueError,
-                  "inconsistent dim_process in different splits?")
+        if self.num_event_types is not None:
+            py_assert(data["dim_process"] == self.num_event_types,
+                    ValueError,
+                    "inconsistent dim_process in different splits?")
 
         source_data = data[split]
         time_seqs = [[x["time_since_start"] for x in seq] for seq in source_data]
