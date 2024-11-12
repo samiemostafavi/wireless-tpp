@@ -26,11 +26,24 @@ class TPPDataLoader:
                     "inconsistent dim_process in different splits?")
 
         source_data = data[split]
+        if self.data_config.data_specs.includes_mcs:
+            mcs_seqs = [[x["mcs_index"] for x in seq] for seq in source_data]
         time_seqs = [[x["time_since_start"] for x in seq] for seq in source_data]
         type_seqs = [[x["type_event"] for x in seq] for seq in source_data]
         time_delta_seqs = [[x["time_since_last_event"] for x in seq] for seq in source_data]
+        if self.data_config.data_specs.mcs_events:
+            nenm = self.data_config.data_specs.num_event_types_no_mcs
+            mcs_time_seqs = [[x["time_since_start"] for x in seq if x["type_event"] >= nenm] for seq in source_data]
+            mcs_type_seqs = [[x["type_event"] for x in seq if x["type_event"] >= nenm] for seq in source_data]
+            mcs_time_delta_seqs = [[x["time_since_last_event"] for x in seq if x["type_event"] >= nenm] for seq in source_data]
 
-        input_dict = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs})
+
+        if self.data_config.data_specs.includes_mcs:
+            input_dict = dict({'mcs_seqs': mcs_seqs, 'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs})
+        elif self.data_config.data_specs.mcs_events:
+            input_dict = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs, 'mcs_time_seqs': mcs_time_seqs, 'mcs_time_delta_seqs': mcs_time_delta_seqs, 'mcs_type_seqs': mcs_type_seqs})
+        else:
+            input_dict = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs})
         return input_dict
 
     def build_input_from_json(self, source_dir: str, split: str):
@@ -48,11 +61,21 @@ class TPPDataLoader:
                   ValueError,
                   "inconsistent dim_process in different splits?")
 
+        if self.data_config.data_specs.includes_mcs:
+            mcs_seqs = data['mcs_index']
         time_seqs = data['time_since_start']
         type_seqs = data['type_event']
         time_delta_seqs = data['time_since_last_event']
+        if self.data_config.data_specs.mcs_events:
+            print("mcs_events is not supported for json data")
+            return dict({})
 
-        input_dict = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs})
+        if self.data_config.data_specs.includes_mcs:
+            input_dict = dict({'mcs_seqs': mcs_seqs, 'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs})
+        elif self.data_config.data_specs.mcs_events:
+            input_dict = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs, 'mcs_time_seqs': mcs_time_seqs, 'mcs_time_delta_seqs': mcs_time_delta_seqs, 'mcs_type_seqs': mcs_type_seqs})
+        else:
+            input_dict = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs})
         return input_dict
 
     def get_loader(self, split='train', **kwargs):

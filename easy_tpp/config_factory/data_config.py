@@ -6,6 +6,10 @@ class DataSpecConfig(Config):
         """Initialize the Config class.
         """
         self.num_event_types = kwargs.get('num_event_types')
+        self.num_event_types_no_mcs = kwargs.get('num_event_types_no_mcs', self.num_event_types)
+        self.includes_mcs = kwargs.get('includes_mcs', False)
+        self.mcs_events = kwargs.get('mcs_events', False)
+        self.min_mcs = kwargs.get('min_mcs', 0)
         self.pad_token_id = kwargs.get('pad_token_id')
         self.padding_side = kwargs.get('padding_side')
         self.truncation_side = kwargs.get('truncation_side')
@@ -36,7 +40,11 @@ class DataSpecConfig(Config):
         """
         return {
             'num_event_types': self.num_event_types,
+            'num_event_types_no_mcs' : self.num_event_types_no_mcs,
+            'min_mcs': self.min_mcs,
             'pad_token_id': self.pad_token_id,
+            'includes_mcs': self.includes_mcs,
+            'mcs_events': self.mcs_events,
             'padding_side': self.padding_side,
             'truncation_side': self.truncation_side,
             'padding_strategy': self.padding_strategy,
@@ -63,7 +71,11 @@ class DataSpecConfig(Config):
             DataSpecConfig: a copy of current config.
         """
         return DataSpecConfig(num_event_types_pad=self.num_event_types_pad,
+                              includes_mcs=self.includes_mcs,
+                              min_mcs=self.min_mcs,
+                              mcs_events=self.mcs_events,
                               num_event_types=self.num_event_types,
+                              num_event_types_no_mcs=self.num_event_types_no_mcs,
                               event_pad_index=self.pad_token_id,
                               padding_side=self.padding_side,
                               truncation_side=self.truncation_side,
