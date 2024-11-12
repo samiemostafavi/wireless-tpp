@@ -124,7 +124,7 @@ class IntensityFree(TorchBaseModel):
         self.mean_inter_time = model_config.get("mean_inter_time", 0.0)
         self.std_inter_time = model_config.get("std_inter_time", 1.0)
 
-        self.num_features = 1 + self.hidden_size
+        self.num_features = 2 + self.hidden_size # important 2 is for time and mcs
 
         if not self.is_prior:
             self.layer_rnn = nn.GRU(input_size=self.num_features,
@@ -147,7 +147,7 @@ class IntensityFree(TorchBaseModel):
         else:
             self.transform = D.AffineTransform(loc=self.mean_inter_time, scale=self.std_inter_time)
 
-    def forward(self, time_delta_seqs, type_seqs):
+    def forward(self, mcs_seqs, time_delta_seqs, type_seqs):
         """Call the model.
 
         Args:
@@ -161,11 +161,13 @@ class IntensityFree(TorchBaseModel):
         # We dont normalize inter-event time here
         temporal_seqs = time_delta_seqs.unsqueeze(-1)
 
+        mcs_seqs = mcs_seqs.unsqueeze(-1)
+
         # [batch_size, seq_len, hidden_size]
         type_emb = self.layer_type_emb(type_seqs)
 
-        # [batch_size, seq_len, hidden_size + 1]
-        rnn_input = torch.cat([temporal_seqs, type_emb], dim=-1)
+        # [batch_size, seq_len, hidden_size + 2], important 2 is for time and mcs
+        rnn_input = torch.cat([mcs_seqs, temporal_seqs, type_emb], dim=-1)
 
         # [batch_size, seq_len, hidden_size]
         rnn_input = rnn_input.float()
@@ -182,12 +184,12 @@ class IntensityFree(TorchBaseModel):
         Returns:
             tuple: loglikelihood loss and num of events.
         """
-        time_seqs, time_delta_seqs, type_seqs, batch_non_pad_mask, _ = batch
+        mcs_seqs, time_seqs, time_delta_seqs, type_seqs, batch_non_pad_mask, _ = batch
 
         batch_size, seq_len = time_delta_seqs[:, :-1].shape
         if not self.is_prior:
             # [batch_size, seq_len, hidden_size]
-            context = self.forward(time_delta_seqs[:, :-1], type_seqs[:, :-1])
+            context = self.forward(mcs_seqs[:, :-1], time_delta_seqs[:, :-1], type_seqs[:, :-1])
 
             # [batch_size, seq_len, 3 * num_mix_components]
             raw_params = self.linear(context)
@@ -260,16 +262,11 @@ class IntensityFree(TorchBaseModel):
         Returns:
             tuple: tensors of dtime and type prediction, [batch_size, seq_len].
         """
-        time_seq, time_delta_seq, event_seq, batch_non_pad_mask, _ = batch
-
-        # remove the last event, as the prediction based on the last event has no label
-        # time_delta_seq should start from 1, because the first one is zero
-        time_seq, time_delta_seq, event_seq = time_seq[:, :-1], time_delta_seq[:, :-1], event_seq[:, :-1]
-
+        mcs_seq, time_seq, time_delta_seq, event_seq, batch_non_pad_mask, _ = batch
         batch_size, seq_len = time_delta_seq[:, :-1].shape
         if not self.is_prior:
             # [batch_size, seq_len, hidden_size]
-            context = self.forward(time_delta_seq[:, :-1], event_seq[:, :-1])
+            context = self.forward(mcs_seq[:, :-1], time_delta_seq[:, :-1], event_seq[:, :-1])
 
             # [batch_size, seq_len, 3 * num_mix_components]
             raw_params = self.linear(context)
@@ -314,7 +311,7 @@ class IntensityFree(TorchBaseModel):
         )
 
         # [num_samples, batch_size, seq_len]
-        accepted_dtimes = inter_time_dist.sample((self.event_sampler.num_sample,))
+        accepted_dtimes = inter_time_dist.sample((1000,))
         dtimes_pred = accepted_dtimes.mean(dim=0)
 
         # [batch_size, seq_len, num_marks]
@@ -334,12 +331,12 @@ class IntensityFree(TorchBaseModel):
             tuple: tensors of dtime and type prediction, [batch_size, seq_len].
             tensor of loglikelihood loss, [seq_len].
         """
-        time_seqs, time_delta_seqs, type_seqs, batch_non_pad_mask, _ = batch
+        mcs_seq, time_seqs, time_delta_seqs, type_seqs, batch_non_pad_mask, _ = batch
 
         batch_size, seq_len = time_delta_seqs[:, :-1].shape
         if not self.is_prior:
             # [batch_size, seq_len, hidden_size]
-            context = self.forward(time_delta_seqs[:, :-1], type_seqs[:, :-1])
+            context = self.forward(mcs_seq[:, :-1], time_delta_seqs[:, :-1], type_seqs[:, :-1])
 
             # [batch_size, seq_len, 3 * num_mix_components]
             raw_params = self.linear(context)
@@ -414,16 +411,12 @@ class IntensityFree(TorchBaseModel):
         Returns:
             tuple: tensors of dtime and type prediction, [batch_size, seq_len].
         """
-        time_seq, time_delta_seq, event_seq, _, _ = batch
-
-        # remove the last event, as the prediction based on the last event has no label
-        # time_delta_seq should start from 1, because the first one is zero
-        time_seq, time_delta_seq, event_seq = time_seq[:, :-1], time_delta_seq[:, :-1], event_seq[:, :-1]
+        mcs_seq, time_seq, time_delta_seq, event_seq, _, _ = batch
 
         batch_size, seq_len = time_delta_seq[:, :-1].shape
         if not self.is_prior:
             # [batch_size, seq_len, hidden_size]
-            context = self.forward(time_delta_seq[:, :-1], event_seq[:, :-1])
+            context = self.forward(mcs_seq[:, :-1], time_delta_seq[:, :-1], event_seq[:, :-1])
 
             # [batch_size, seq_len, 3 * num_mix_components]
             raw_params = self.linear(context)
@@ -480,8 +473,8 @@ class IntensityFree(TorchBaseModel):
         # Marks are modeled conditionally independently from times
         types_logprob_pred = types_logprob_pred[:, -1, :]
 
-        time_seq_label, time_delta_seq_label, event_seq_label, _, _ = batch
-        return dtimes_logprob_pred, types_logprob_pred, time_delta_seq_label, event_seq_label
+        mcs_seq_label, time_seq_label, time_delta_seq_label, event_seq_label, _, _ = batch
+        return dtimes_logprob_pred, types_logprob_pred, time_delta_seq_label, event_seq_label, mcs_seq_label
     
 
     def generate_samples_one_step_since_last_event(self, batch, prediction_config, forward=False):
@@ -495,16 +488,12 @@ class IntensityFree(TorchBaseModel):
         Returns:
             tuple: tensors of dtime and type prediction, [batch_size, seq_len].
         """
-        time_seq, time_delta_seq, event_seq, _, _ = batch
-
-        # remove the last event, as the prediction based on the last event has no label
-        # time_delta_seq should start from 1, because the first one is zero
-        time_seq, time_delta_seq, event_seq = time_seq[:, :-1], time_delta_seq[:, :-1], event_seq[:, :-1]
+        mcs_seq, time_seq, time_delta_seq, event_seq, _, _ = batch
 
         batch_size, seq_len = time_delta_seq[:, :-1].shape
         if not self.is_prior:
             # [batch_size, seq_len, hidden_size]
-            context = self.forward(time_delta_seq[:, :-1], event_seq[:, :-1])
+            context = self.forward(mcs_seq[:, :-1], time_delta_seq[:, :-1], event_seq[:, :-1])
 
             # [batch_size, seq_len, 3 * num_mix_components]
             raw_params = self.linear(context)
@@ -556,5 +545,5 @@ class IntensityFree(TorchBaseModel):
         event_type_dist = Categorical(logits=mark_logits)
         event_type_samples = event_type_dist.sample((prediction_config['num_samples_event_type'],))
 
-        time_seq_label, time_delta_seq_label, event_seq_label, _, _ = batch
+        mcs_seq_label, time_seq_label, time_delta_seq_label, event_seq_label, _, _ = batch
         return (dtimes_samples, event_type_samples), time_delta_seq_label, event_seq_label

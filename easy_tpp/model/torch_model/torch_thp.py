@@ -26,14 +26,13 @@ class THP(TorchBaseModel):
         self.n_head = model_config.num_heads
         self.dropout = model_config.dropout_rate
 
-        # create a transformation for dtimes being using for loglike_loss
-        #self.mean_inter_time = model_config.get("mean_inter_time", 0.0)
-        #self.std_inter_time = model_config.get("std_inter_time", 1.0) 
-        #if self.mean_inter_time == 0.0 and self.std_inter_time == 1.0:
-        #    self.transform = None
-        #else:
-        self.transform = D.AffineTransform(loc=0, scale=self.gen_config.dtime_max/10)
+        self.filter_mcs_events_for_loss = model_config.model_specs.get("filter_mcs_events_for_loss", False)
+        if self.filter_mcs_events_for_loss:
+            self.num_event_types_no_mcs_t = torch.tensor(model_config.num_event_types_no_mcs, device=self.device)
 
+        # done in Base Model
+        #self.std_inter_time = model_config.get("std_inter_time", 1.0)
+        #self.transform = D.AffineTransform(loc=0, scale=self.std_inter_time)
 
         self.layer_temporal_encoding = TimePositionalEncoding(self.d_model, device=self.device)
 
@@ -75,6 +74,9 @@ class THP(TorchBaseModel):
         Returns:
             tensor: hidden states at event times.
         """
+        # convert type_seqs to int type for embedding
+        type_seqs = type_seqs.long()
+
         # [batch_size, seq_len, hidden_size]
         tem_enc = self.layer_temporal_encoding(time_seqs)
         enc_output = self.layer_type_emb(type_seqs)
@@ -97,7 +99,9 @@ class THP(TorchBaseModel):
         Returns:
             tuple: loglike loss, num events.
         """
-        time_seqs, time_delta_seqs, type_seqs, batch_non_pad_mask, attention_mask = batch
+        time_seqs, time_delta_seqs_transformed, type_seqs, batch_non_pad_mask, attention_mask = batch
+
+        type_seqs = type_seqs.long()
 
         # 1. compute event-loglik
         # [batch_size, seq_len, hidden_size]
@@ -110,19 +114,40 @@ class THP(TorchBaseModel):
         factor_intensity_base = self.factor_intensity_base[None, ...]
 
         # transform time_delta_seqs
-        time_delta_seqs = self.transform.inv(time_delta_seqs)
+        time_delta_seqs = self.transform.inv(time_delta_seqs_transformed)
 
         # update time decay based on Equation (6)
         # [batch_size, seq_len, num_event_types]
         intensity_states = factor_intensity_decay * time_delta_seqs[:, 1:, None] + self.layer_intensity_hidden(
             enc_out) + factor_intensity_base
-
+        
         lambda_at_event = self.softplus(intensity_states)
+
+        if self.filter_mcs_events_for_loss:
+            # Create an event type mask to exclude mcs event types
+            event_type_mask = (torch.arange(self.num_event_types, device=self.device) < self.num_event_types_no_mcs_t).float()
+            event_type_mask = event_type_mask.view(1, 1, -1)  # Shape: [1, 1, num_event_types]
+            # Apply the mcs event mask to lambda_at_event to zero out mcs event types
+            lambda_at_event = lambda_at_event * event_type_mask  # Exclude mcs event types
+            # For mcs events, set the intensity at the event type to 1.0 (so log(1) = 0)
+            # Get indices where mcs events occur
+            # Identify mcs events and non-mcs events
+            is_mcs_event = (type_seqs[:, 1:] >= self.num_event_types_no_mcs_t)
+            is_not_mcs_event = ~is_mcs_event  # Logical NOT to get non-mcs events
+            mcs_event_indices = is_mcs_event
+
+            batch_indices, time_indices = torch.nonzero(mcs_event_indices, as_tuple=True)
+            event_types_mcs = type_seqs[:, 1:][batch_indices, time_indices]
+            # Set lambda_at_event at these positions to 1.0
+            lambda_at_event[batch_indices, time_indices, event_types_mcs] = 1.0
 
         # 2. compute non-event-loglik (using MC sampling to compute integral)
         # 2.1 sample dtimes
         # [batch_size, seq_len, num_sample]
-        sample_dtimes = self.make_dtime_loss_samples(time_delta_seqs[:, 1:])
+        sample_dtimes_transformed = self.make_dtime_loss_samples(time_delta_seqs_transformed[:, 1:])
+
+        # transform time_delta_seqs
+        sample_dtimes = self.transform.inv(sample_dtimes_transformed)
 
         # 2.2 compute intensities at sampled times
         # [batch_size, num_times = max_len - 1, num_sample, event_num]
@@ -130,11 +155,31 @@ class THP(TorchBaseModel):
                                                              sample_dtimes=sample_dtimes)
         lambda_t_sample = self.softplus(state_t_sample)
 
-        event_ll, non_event_ll, num_events = self.compute_loglikelihood(lambda_at_event=lambda_at_event,
-                                                                        lambdas_loss_samples=lambda_t_sample,
-                                                                        time_delta_seq=time_delta_seqs[:, 1:],
-                                                                        seq_mask=batch_non_pad_mask[:, 1:],
-                                                                        type_seq=type_seqs[:, 1:])
+
+        if self.filter_mcs_events_for_loss:
+            # Apply the event type mask to lambda_t_sample
+            event_type_mask_expanded = event_type_mask.unsqueeze(2)  # Shape: [1, 1, 1, num_event_types]
+            lambda_t_sample = lambda_t_sample * event_type_mask_expanded  # Exclude mcs event types
+            # Adjust the sequence mask to exclude mcs events
+            seq_mask = batch_non_pad_mask[:, 1:]
+            seq_mask_no_mcs = seq_mask & is_not_mcs_event  # Exclude mcs events from the mask
+
+            # Set mcs events to pad_token_id
+            type_seqs = type_seqs.clone()  # Clone to avoid modifying the original tensor
+            complete_is_mcs_event = (type_seqs >= self.num_event_types_no_mcs_t)
+            type_seqs[complete_is_mcs_event] = self.pad_token_id
+
+            event_ll, non_event_ll, num_events = self.compute_loglikelihood(lambda_at_event=lambda_at_event,
+                                                                            lambdas_loss_samples=lambda_t_sample,
+                                                                            time_delta_seq=time_delta_seqs[:, 1:],
+                                                                            seq_mask=seq_mask_no_mcs,
+                                                                            type_seq=type_seqs[:, 1:])
+        else:
+            event_ll, non_event_ll, num_events = self.compute_loglikelihood(lambda_at_event=lambda_at_event,
+                                                                            lambdas_loss_samples=lambda_t_sample,
+                                                                            time_delta_seq=time_delta_seqs[:, 1:],
+                                                                            seq_mask=batch_non_pad_mask[:, 1:],
+                                                                            type_seq=type_seqs[:, 1:])
 
         # compute loss to minimize
         loss = - (event_ll - non_event_ll).sum()
@@ -156,9 +201,6 @@ class THP(TorchBaseModel):
         # [batch_size, seq_len, num_samples, 1]
         sample_dtimes = sample_dtimes[..., None]
 
-        # transform sample_dtimes
-        sample_dtimes = self.transform.inv(sample_dtimes)
-
         # [1, 1, 1, num_event_types]
         factor_intensity_decay = self.factor_intensity_decay[None, None, ...]
         factor_intensity_base = self.factor_intensity_base[None, None, ...]
@@ -174,7 +216,7 @@ class THP(TorchBaseModel):
                                             time_seqs,
                                             time_delta_seqs,
                                             type_seqs,
-                                            sample_dtimes,
+                                            sample_dtimes_transformed,
                                             **kwargs):
         """Compute hidden states at sampled times.
 
@@ -190,6 +232,7 @@ class THP(TorchBaseModel):
 
         attention_mask = kwargs.get('attention_mask', None)
         compute_last_step_only = kwargs.get('compute_last_step_only', False)
+        batch_non_pad_mask = kwargs.get('batch_non_pad_mask', None)
 
         if attention_mask is None:
             batch_size, seq_len = time_seqs.size()
@@ -199,6 +242,9 @@ class THP(TorchBaseModel):
         # [batch_size, seq_len, num_samples]
         enc_out = self.forward(time_seqs, type_seqs, attention_mask)
 
+        # transform time_delta_seqs
+        sample_dtimes = self.transform.inv(sample_dtimes_transformed)
+
         # [batch_size, seq_len, num_samples, hidden_size]
         encoder_output = self.compute_states_at_sample_times(enc_out, sample_dtimes)
 
@@ -207,4 +253,13 @@ class THP(TorchBaseModel):
         else:
             # [batch_size, seq_len, num_samples, num_event_types]
             lambdas = self.softplus(encoder_output)
+
+        if self.filter_mcs_events_for_loss:
+            # Create an event type mask to exclude mcs event types
+            event_type_mask = (torch.arange(self.num_event_types, device=self.device) < self.num_event_types_no_mcs_t).float()
+            event_type_mask = event_type_mask.view(1, 1, -1)  # Shape: [1, 1, num_event_types]
+            # Apply the event type mask to lambda
+            event_type_mask_expanded = event_type_mask.unsqueeze(2)  # Shape: [1, 1, 1, num_event_types]
+            lambdas = lambdas * event_type_mask_expanded  # Exclude mcs event types
+
         return lambdas

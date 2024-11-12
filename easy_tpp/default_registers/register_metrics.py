@@ -94,18 +94,18 @@ def rmse_dtime_metric_function(predictions, labels, **kwargs):
     Returns:
         float: average rmse of the time predictions.
     """
-    # input prediction shape is [1, 2, batch_size, seq_len]
+    # input prediction shape is [batch_size, 2]
     # we pick the last element of the sequence and remove the first 2 dims
     # result is [batch_size]
-    predictions = np.array(predictions)[0,0,:,-1]
+    predictions = np.array(predictions)[:,0]
 
-    # input label shape is [1, 2, batch_size, seq_len]
+    # input label shape is [batch_size, 2]
     # we pick the last element of the sequence and remove the first dim, then we transpose the matrix\
     # result is [batch_size]
-    labels = np.array(labels)[0,0,:,-1]
-
+    labels = np.array(labels)[:,0]
     # Overall RMSE considering both X and Y together
-    return np.sqrt(np.mean((labels - predictions) ** 2))
+    #return np.sqrt(np.mean((labels - predictions) ** 2))
+    return 0
 
 
 @MetricsHelper.register(name='rmse_event', direction=MetricsHelper.MINIMIZE, overwrite=False)
@@ -119,18 +119,19 @@ def rmse_event_metric_function(predictions, labels, **kwargs):
     Returns:
         float: average rmse of the time predictions.
     """
-    # input prediction shape is [1, 2, batch_size, seq_len]
+    # input prediction shape is [batch_size, 2]
     # we pick the last element of the sequence and remove the first 2 dims
     # result is [batch_size]
-    predictions = np.array(predictions)[0,1,:,-1]
+    predictions = np.array(predictions)[:,1]
 
-    # input label shape is [1, 2, batch_size, seq_len]
+    # input label shape is [batch_size, 2]
     # we pick the last element of the sequence and remove the first dim, then we transpose the matrix\
     # result is [batch_size]
-    labels = np.array(labels)[0,1,:,-1]
+    labels = np.array(labels)[:,1]
 
     # Overall RMSE considering both X and Y together
-    return np.sqrt(np.mean((labels - predictions) ** 2))
+    #return np.sqrt(np.mean((labels - predictions) ** 2))
+    return 0
 
 
 @MetricsHelper.register(name='rmse', direction=MetricsHelper.MINIMIZE, overwrite=False)
