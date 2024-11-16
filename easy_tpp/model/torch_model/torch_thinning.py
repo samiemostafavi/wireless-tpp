@@ -12,7 +12,7 @@ class EventSampler(nn.Module):
     """
 
     def __init__(self, num_sample, num_exp, over_sample_rate, num_samples_boundary, dtime_max, patience_counter,
-                 device):
+                 device, transform=None):
         """Initialize the event sampler.
 
         Args:
@@ -32,6 +32,7 @@ class EventSampler(nn.Module):
         self.dtime_max = dtime_max
         self.patience_counter = patience_counter
         self.device = device
+        self.transform = transform
 
     def compute_intensity_upper_bound(self, time_seq, time_delta_seq, event_seq, intensity_fn,
                                       compute_last_step_only):
@@ -226,6 +227,10 @@ class EventSampler(nn.Module):
 
         # [batch_size, seq_len, num_sample]
         weights = torch.ones_like(res)/res.shape[2]
+
+        # Transform accepted times back to the original time scale
+        if self.transform is not None:
+            res_original_scale = self.transform(res)  # [batch_size, seq_len, num_sample]
         
         # add a upper bound here in case it explodes, e.g., in ODE models
-        return res.clamp(max=1e5), weights
+        return res_original_scale.clamp(max=1e5), weights
