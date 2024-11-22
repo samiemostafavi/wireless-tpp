@@ -25,7 +25,6 @@ class TorchBaseModel(nn.Module):
         self.eps = torch.finfo(torch.float32).eps
 
         self.is_prior = model_config.model_specs.get('prior', False)
-        self.includes_mcs = model_config.model_specs.get('includes_mcs', False)
 
         if not self.is_prior and not (type(self).__name__ == 'IntensityFree2D'):
             self.layer_type_emb = nn.Embedding(self.num_event_types_pad,  # have padding
@@ -37,6 +36,8 @@ class TorchBaseModel(nn.Module):
         if (type(self).__name__ == 'THP'):
             self.std_inter_time = model_config.get("std_inter_time", 1.0)
             self.transform = D.AffineTransform(loc=0, scale=self.std_inter_time)
+        else:
+            self.transform = None
 
         self.gen_config = model_config.thinning
         self.event_sampler = None

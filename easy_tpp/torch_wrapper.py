@@ -114,7 +114,7 @@ class TorchModelWrapper:
             grad_flag = is_training if not self.model_id == 'FullyNN' else True
             # run model
             with torch.set_grad_enabled(grad_flag):
-                loss, num_event = self.model.loglike_loss(batch)
+                loss, num_event, dtime_loss, num_rbs_loss = self.model.loglike_loss(batch)
 
             # Assume we dont do prediction on train set
             pred_dtime, pred_type, label_dtime, label_type, mask = None, None, None, None, None
@@ -135,7 +135,7 @@ class TorchModelWrapper:
                         pred_dtime, pred_type = self.model.predict_one_step_at_every_event(batch=batch)
                         pred_dtime = pred_dtime.detach().cpu().numpy()
                         pred_type = pred_type.detach().cpu().numpy()
-            return loss.item(), num_event, (pred_dtime, pred_type), (label_dtime, label_type), (mask,)
+            return loss.item(), num_event, (pred_dtime, pred_type), (label_dtime, label_type), (mask,), dtime_loss.item(), num_rbs_loss.item()
         else:
             pred_dtime, pred_type, ll_dtime, ll_type, num_events = self.model.predict_multi_step_since_last_event(batch=batch)
             pred_dtime = pred_dtime.detach().cpu().numpy()
@@ -162,26 +162,19 @@ class TorchModelWrapper:
         if phase is not RunnerPhase.PREDICT:
             return None
         
-        if self.model.includes_mcs:
-        # [batch_size, seq_len, num_samples_boundary, event_num]
-            dtime_pred_probs, event_type_pred_probs, label_dtime, label_time, label_type, label_mcs = self.model.predict_probabilities_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
-            dtime_pred_probs = dtime_pred_probs.detach().cpu().numpy()
-            event_type_pred_probs = event_type_pred_probs.detach().cpu().numpy()
-            label_time = label_time.detach().cpu().numpy()
-            label_dtime = label_dtime.detach().cpu().numpy()
-            label_type = label_type.detach().cpu().numpy()
-            label_mcs = label_mcs.detach().cpu().numpy()
-            return (dtime_pred_probs, event_type_pred_probs), (label_dtime, label_time, label_type, label_mcs)
-        else:
-            pred_probs, label_dtime, label_time, label_type = self.model.predict_probabilities_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
-            dtime_pred_probs = pred_probs[0]
-            event_type_pred_probs = pred_probs[1]
-            dtime_pred_probs = dtime_pred_probs.detach().cpu().numpy()
-            event_type_pred_probs = event_type_pred_probs.detach().cpu().numpy()
-            label_dtime = label_dtime.detach().cpu().numpy()
-            label_time = label_time.detach().cpu().numpy()
-            label_type = label_type.detach().cpu().numpy()
-            return (dtime_pred_probs, event_type_pred_probs), (label_dtime, label_time, label_type)
+        dtime_pred_probs, num_rbs_logits, label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs = self.model.predict_probabilities_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
+        dtime_pred_probs = dtime_pred_probs.detach().cpu().numpy()
+        num_rbs_logits = num_rbs_logits.detach().cpu().numpy()
+        label_dtime = label_dtime.detach().cpu().numpy()
+        label_time = label_time.detach().cpu().numpy()
+        label_type = label_type.detach().cpu().numpy()
+        slot_seqs = slot_seqs.detach().cpu().numpy()
+        len_seqs = len_seqs.detach().cpu().numpy()
+        mcs_seqs = mcs_seqs.detach().cpu().numpy()
+        mac_retx_seqs = mac_retx_seqs.detach().cpu().numpy()
+        rlc_failed_seqs = rlc_failed_seqs.detach().cpu().numpy()
+        num_rbs_seqs = num_rbs_seqs.detach().cpu().numpy()
+        return (dtime_pred_probs,num_rbs_logits), (label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs)
     
     def run_batch_sample_generation(self, batch, phase):
         """Run one batch produce samples only for the last event in the sequence
