@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import Union, Optional
 
-from easy_tpp.preprocess.event_tokenizer import EventTokenizer
-from easy_tpp.utils import PaddingStrategy, TruncationStrategy
+from wireless_tpp.preprocess.event_tokenizer import EventTokenizer
+from wireless_tpp.utils import PaddingStrategy, TruncationStrategy
 
 
 @dataclass

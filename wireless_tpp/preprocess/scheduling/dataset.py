@@ -1,14 +1,12 @@
-import math
 from typing import Dict
 
 import numpy as np
-from torch.utils.data import Dataset, DataLoader
+from wireless_tpp.preprocess import BaseTPPDataset
 
-from easy_tpp.preprocess.data_collator import TPPDataCollator
-from easy_tpp.preprocess.event_tokenizer import EventTokenizer
-from easy_tpp.utils import py_assert, is_tf_available, logger
+from wireless_tpp.preprocess.data_collator import TPPDataCollator
+from wireless_tpp.utils import py_assert, logger
 
-class TPPDatasetScheduling(Dataset):
+class TPPDatasetScheduling(BaseTPPDataset):
     def __init__(self, data: Dict):
         self.data_dict = data
 
@@ -151,28 +149,3 @@ class TPPDatasetScheduling(Dataset):
 
         return x_bar, (s_2_x ** 0.5), xp_bar, (s_2_xp ** 0.5), min_val, max_val, min_mark, max_mark
 
-def get_data_loader(dataset: TPPDatasetScheduling, backend: str, tokenizer: EventTokenizer, **kwargs):
-    use_torch = backend == 'torch'
-
-    padding = True if tokenizer.padding_strategy is None else tokenizer.padding_strategy
-    truncation = False if tokenizer.truncation_strategy is None else tokenizer.truncation_strategy
-
-    if use_torch:
-        data_collator = TPPDataCollator(tokenizer=tokenizer,
-                                        return_tensors='pt',
-                                        max_length=tokenizer.model_max_length,
-                                        padding=padding,
-                                        truncation=truncation)
-
-        return DataLoader(dataset,
-                          collate_fn=data_collator,
-                          **kwargs)
-    else:
-        # we pass to placeholders
-        data_collator = TPPDataCollator(tokenizer=tokenizer,
-                                        return_tensors='np',
-                                        max_length=tokenizer.model_max_length,
-                                        padding=padding,
-                                        truncation=truncation)
-
-        return dataset.to_tf_dataset(data_collator, **kwargs)

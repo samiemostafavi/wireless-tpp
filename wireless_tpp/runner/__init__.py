@@ -1,7 +1,11 @@
-from easy_tpp.runner.base_runner import Runner
-from easy_tpp.runner.tpp_runner import TPPRunner
+from wireless_tpp.runner.tpp_runner_link import TPPRunnerLinkQuality
+from wireless_tpp.runner.tpp_runner_packet import TPPRunnerPacketArrival
+from wireless_tpp.runner.tpp_runner_scheduling import TPPRunnerScheduling
 # for register all necessary contents
-from easy_tpp.default_registers.register_metrics import *
+from wireless_tpp.default_registers.register_metrics import *
 
-__all__ = ['Runner',
-           'TPPRunner']
+__all__ = [
+    'TPPRunnerLinkQuality',
+    'TPPRunnerPacketArrival',
+    'TPPRunnerScheduling'
+]

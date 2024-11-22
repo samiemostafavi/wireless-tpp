@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from typing import Any
 
-from easy_tpp.utils import save_yaml_config, load_yaml_config, Registrable, logger
+from wireless_tpp.utils import save_yaml_config, load_yaml_config, Registrable, logger
 
 
 class Config(Registrable):
