@@ -1,11 +1,16 @@
 =============================================================
-EasyTPP is a open source tool developed by Machine Intelligence Team
-Copyright (c) 2020-2022, Ant Group Holding Limited.
+WirelessTPP is a open source tool developed by Samie Mostafavi
+Copyright (c) 2024, Samie Mostafavi
 Licensed under the Apache License, Version 2.0
 
 =============================================================
 This toolkit contains various third-party components under
 different open source licenses
+
+-----------------------------
+Training evaluation pipeline and the base for pytorch models
+Apache License, Version 2.0
+EasyTPP authors
 
 -----------------------------
 Training evaluation pipeline

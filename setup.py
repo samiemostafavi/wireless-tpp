@@ -45,14 +45,11 @@ def parse_requirements(fname='requirements.txt'):
 
 
 setup(
-    name='easy_tpp',
+    name='wireless_tpp',
     version=get_version(),
-    description='An easy and flexible tool for neural temporal point process',
-    url = 'https://github.com/ant-research/EasyTemporalPointProcess/',
-    # long_description = 'Our EasyTPP makes several unique contributions to this area: a unified interface of using existing datasets and adding new datasets; a wide range of evaluation programs that are easy to use and extend as well as facilitate reproducible research; implementations of popular neural TPPs, together with a rich library of modules by composing which one could quickly build complex models. ',
-    # long_description=open('README.md').read(),
-    # long_description_content_type='text/markdown',
-    author='Alipay',
+    description='A tool for applying neural temporal point process on wireless communication data',
+    url = 'https://github.com/samiemostafavi/EasyTemporalPointProcess/',
+    author='KTH Royal Institute of Technology',
     packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     include_package_data=True,
     classifiers=[
