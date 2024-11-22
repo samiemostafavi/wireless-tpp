@@ -5,7 +5,7 @@ from torch.distributions import Categorical, TransformedDistribution
 from torch.distributions import MixtureSameFamily as TorchMixtureSameFamily
 from torch.distributions import Normal as TorchNormal
 
-from easy_tpp.model.torch_model.torch_basemodel import TorchBaseModel
+from wireless_tpp.model.basemodel import TorchBaseModel
 
 
 def clamp_preserve_gradients(x, min_val, max_val):
@@ -119,6 +119,10 @@ class IntensityFreeLinkQuality(TorchBaseModel):
 
         """
         super(IntensityFreeLinkQuality, self).__init__(model_config)
+
+        self.layer_type_emb = nn.Embedding(self.num_event_types_pad,  # have padding
+                                            self.hidden_size,
+                                            padding_idx=self.pad_token_id)
 
         self.num_mix_components = model_config.model_specs['num_mix_components']
         self.mean_inter_time = model_config.get("mean_inter_time", 0.0)

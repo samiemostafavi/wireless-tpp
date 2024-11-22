@@ -1,4 +1,4 @@
-from easy_tpp.config_factory.config import Config
+from wireless_tpp.config_factory.config import Config
 
 
 class DataSpecConfig(Config):

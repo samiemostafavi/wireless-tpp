@@ -1,7 +1,7 @@
 import numpy as np
 
-from easy_tpp.utils.const import PredOutputIndex
-from easy_tpp.utils.metrics import MetricsHelper
+from wireless_tpp.utils.const import PredOutputIndex
+from wireless_tpp.utils.metrics import MetricsHelper
 
 
 @MetricsHelper.register(name='rmse_2d', direction=MetricsHelper.MINIMIZE, overwrite=False)

@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
-from easy_tpp.utils import logger
+from wireless_tpp.utils import logger
 
 
-class EventSamplerPacketArrival(nn.Module):
+class EventSampler(nn.Module):
     """Event Sequence Sampler based on thinning algorithm, which corresponds to Algorithm 2 of
     The Neural Hawkes Process: A Neurally Self-Modulating Multivariate Point Process,
     https://arxiv.org/abs/1612.09328.
@@ -24,7 +24,7 @@ class EventSamplerPacketArrival(nn.Module):
             patience_counter (int): the maximum iteration used in adaptive thinning.
             device (torch.device): torch device index to select.
         """
-        super(EventSamplerPacketArrival, self).__init__()
+        super(EventSampler, self).__init__()
         self.num_sample = num_sample
         self.num_exp = num_exp
         self.over_sample_rate = over_sample_rate

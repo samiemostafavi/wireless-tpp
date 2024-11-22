@@ -1,13 +1,13 @@
 import copy
 import os
 
-from easy_tpp.config_factory.config import Config
-from easy_tpp.config_factory.data_config import DataConfig
-from easy_tpp.config_factory.model_config import TrainerConfig, ModelConfig, BaseConfig
-from easy_tpp.utils import create_folder, logger, get_unique_id, get_stage, RunnerPhase, \
+from wireless_tpp.config_factory.config import Config
+from wireless_tpp.config_factory.data_config import DataConfig
+from wireless_tpp.config_factory.model_config import TrainerConfig, ModelConfig, BaseConfig
+from wireless_tpp.utils import create_folder, logger, get_unique_id, get_stage, RunnerPhase, \
     MetricsHelper, DefaultRunnerConfig, py_assert, is_torch_available, is_tf_available, is_tf_gpu_available, \
     is_torch_gpu_available
-from easy_tpp.utils.const import Backend
+from wireless_tpp.utils.const import Backend
 
 
 @Config.register('runner_config')

@@ -1,6 +1,5 @@
-from easy_tpp.config_factory.config import Config
-
-from easy_tpp.utils.const import Backend
+from wireless_tpp.config_factory.config import Config
+from wireless_tpp.utils.const import Backend
 
 
 class TrainerConfig(Config):

@@ -3,7 +3,7 @@
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from easy_tpp.utils import RunnerPhase, set_optimizer, set_device
+from wireless_tpp.utils import RunnerPhase, set_optimizer, set_device
 
 
 class TorchModelWrapper:

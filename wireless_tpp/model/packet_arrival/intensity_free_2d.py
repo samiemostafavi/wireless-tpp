@@ -4,8 +4,8 @@ from torch import nn
 from torch.distributions import TransformedDistribution
 from torch.distributions import MixtureSameFamily as TorchMixtureSameFamily
 from torch.distributions import MultivariateNormal as MultivariateTorchNormal
-from easy_tpp.model.torch_model.torch_basemodel import TorchBaseModel
-from easy_tpp.utils import logger
+from wireless_tpp.model.basemodel import TorchBaseModel
+from wireless_tpp.utils import logger
 
 
 def clamp_preserve_gradients(x, min_val, max_val):
