@@ -3,7 +3,7 @@ import sys
 from collections import OrderedDict
 from typing import Union, Tuple
 
-from easy_tpp.utils.log_utils import default_logger as logger
+from wireless_tpp.utils.log_utils import default_logger as logger
 
 if sys.version_info < (3, 8):
     import importlib_metadata

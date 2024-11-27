@@ -55,4 +55,8 @@ setup(
     classifiers=[
         'Programming Language :: Python :: 3'
     ],
-    install_requires=parse_requirements('requirements.txt'))
+    dependency_links=[
+        'git+https://github.com/samiemostafavi/edaf@develop#egg=edaf'
+    ],
+    install_requires=parse_requirements('requirements.txt')
+)

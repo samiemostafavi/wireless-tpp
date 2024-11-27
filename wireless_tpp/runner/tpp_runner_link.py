@@ -4,7 +4,7 @@ import logging, json
 import numpy as np
 from wireless_tpp.utils import RunnerPhase, logger, MetricsHelper, MetricsTracker, concat_element, save_pickle, Timer, get_unique_id, LogConst, get_stage
 from wireless_tpp.utils.const import Backend
-from wireless_tpp.preprocess import TPPDataLoaderLinkQuality
+from wireless_tpp.preprocess.link_quality import TPPDataLoaderLinkQuality
 
 # important: this line will register acc and rmse metrics
 from wireless_tpp.default_registers.register_metrics import *

@@ -1,0 +1,19 @@
+Metadata-Version: 2.1
+Name: wireless_tpp
+Version: 0.0.1.0
+Summary: A tool for applying neural temporal point process on wireless communication data
+Home-page: https://github.com/samiemostafavi/EasyTemporalPointProcess/
+Author: KTH Royal Institute of Technology
+Classifier: Programming Language :: Python :: 3
+License-File: LICENCE
+License-File: NOTICE
+Requires-Dist: PyYAML>=5.1
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: torch
+Requires-Dist: tensorboard
+Requires-Dist: packaging
+Requires-Dist: datasets
+Requires-Dist: plotly
+Requires-Dist: scipy
+Requires-Dist: edaf@ git+https://github.com/samiemostafavi/edaf@develop

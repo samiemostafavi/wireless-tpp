@@ -25,3 +25,12 @@ log
 .idea
 
 examples/checkpoints/*
+
+
+# ignore _results folders
+*_results/
+results/
+data/
+config/
+*.lseq
+*.parquet

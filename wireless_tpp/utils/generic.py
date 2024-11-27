@@ -1,6 +1,6 @@
 import numpy as np
 
-from easy_tpp.utils import is_torch_available, is_tf_available
+from wireless_tpp.utils import is_torch_available, is_tf_available
 
 
 def is_tensor(x):

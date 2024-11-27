@@ -1,8 +1,8 @@
 from abc import abstractmethod
 from torch.utils.data import Dataset, DataLoader
 
-from wireless_tpp.preprocess.data_collator import TPPDataCollator
-from wireless_tpp.preprocess.event_tokenizer import EventTokenizer
+from .data_collator import TPPDataCollator
+from .event_tokenizer import EventTokenizer
 
 class BaseTPPDataset(Dataset):
     @abstractmethod

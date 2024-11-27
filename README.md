@@ -40,6 +40,18 @@ We use EDAF and Openairinterface 5G for creation of the dataset
 ## Quick Start <a href='#top'>[Back to Top]</a>
 <span id='quick-start'/>
 
+This code is tested with Python 3.9. 
+To create a Python 3.9 environment with Conda, you can use the following command:
+
+```shell
+conda create --name wireless_tpp python=3.9
+```
+This command will create a new Conda environment with Python 3.9 installed.
+
+```shell
+conda activate wireless_tpp
+```
+
 We provide an end-to-end example for users to run a standard TPP model with `WirelessTPP`.
 
 
@@ -62,6 +74,47 @@ python setup.py install
 
 ### Step 2. Prepare datasets 
 
+Preprocess edaf files and create database file:
+```
+python main.py -t preprocess_edaf -s data/s63_results
+```
+
+Plot the processed data (packet_arrival)
+```
+python main.py -t packet_arrival -u plot_data -s data/s63_results -c config/dataset_config.json -g s63 -n test0
+```
+
+Plot the processed data (link_quality)
+```
+python main.py -t link_quality -u plot_data -s data/s63_results -c config/dataset_config.json -g s63 -n test0
+python main.py -t link_quality -u plot_data -f -s data/s63_results -c config/dataset_config.json -g s63 -n test0
+```
+
+Plot the processed data (scheduling)
+```
+python main.py -t scheduling -u plot_data -s data/s63_results -c config/dataset_config.json -g s63 -n test0
+python main.py -t scheduling -u plot_data -v -s data/s63_results -c config/dataset_config.json -g s63 -n test0
+```
+
+Create the dataset (packet arrival)
+```
+python main.py -t packet_arrival -u create_training_dataset -s data/s63_results -c config/dataset_config.json -g s63_arrival -n test0
+```
+
+Create the dataset (link quality retransmissions)
+```
+python main.py -t link_quality -u create_training_dataset -s data/s63_results -c config/dataset_config.json -g s63_link_retx -n test0
+```
+
+Create the dataset (link quality mcs)
+```
+python main.py -t link_quality -u create_training_dataset -s data/s61-64_results -c config/dataset_config.json -g s61-64_link_mcs -n test0
+```
+
+Create the dataset (scheduling)
+```
+python main.py -t scheduling -u create_training_dataset -s data/s63_results -c config/dataset_config.json -g s63_scheduling -n test0
+```
 
 
 ### Step 3. Train the models

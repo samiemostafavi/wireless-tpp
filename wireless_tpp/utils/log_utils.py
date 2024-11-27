@@ -2,7 +2,7 @@ import logging
 import sys
 import typing
 
-from easy_tpp.utils.const import LogConst
+from wireless_tpp.utils.const import LogConst
 
 # -------- log setting ---------
 DEFAULT_LOGGER = "easytpp.logger"

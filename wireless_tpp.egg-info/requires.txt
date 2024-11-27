@@ -7,4 +7,4 @@ packaging
 datasets
 plotly
 scipy
-edaf @ git+https://github.com/samiemostafavi/edaf@develop
+edaf@ git+https://github.com/samiemostafavi/edaf@develop

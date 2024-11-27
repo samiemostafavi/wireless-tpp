@@ -2,7 +2,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from easy_tpp.utils.log_utils import default_logger as logger
+from wireless_tpp.utils.log_utils import default_logger as logger
 
 
 class MetricsHelper:
