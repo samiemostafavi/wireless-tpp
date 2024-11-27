@@ -4,7 +4,7 @@ import random
 import numpy as np
 import torch
 
-from easy_tpp.utils.import_utils import is_torch_mps_available
+from wireless_tpp.utils.import_utils import is_torch_mps_available
 
 
 def set_seed(seed=1029):

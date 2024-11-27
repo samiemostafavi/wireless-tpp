@@ -5,7 +5,7 @@ import pickle
 import numpy as np
 import yaml
 
-from easy_tpp.utils.const import RunnerPhase
+from wireless_tpp.utils.const import RunnerPhase
 
 
 def py_assert(condition, exception_type, msg):

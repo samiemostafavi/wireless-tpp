@@ -1,7 +1,7 @@
 from abc import abstractmethod
-from wireless_tpp.preprocess import get_data_loader
-from wireless_tpp.preprocess import BaseTPPDataset
-from wireless_tpp.preprocess.event_tokenizer import EventTokenizer
+from .base_dataset import get_data_loader
+from .base_dataset import BaseTPPDataset
+from .event_tokenizer import EventTokenizer
 
 
 class BaseTPPDataLoader:

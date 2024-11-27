@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Union, Optional
 
-from wireless_tpp.preprocess.event_tokenizer import EventTokenizer
+from .event_tokenizer import EventTokenizer
 from wireless_tpp.utils import PaddingStrategy, TruncationStrategy
 
 
