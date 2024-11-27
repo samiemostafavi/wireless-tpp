@@ -1,1 +1,0 @@
-git+https://github.com/samiemostafavi/edaf@develop#egg=edaf
