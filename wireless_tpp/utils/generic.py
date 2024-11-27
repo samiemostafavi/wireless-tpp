@@ -12,14 +12,8 @@ def is_tensor(x):
 
         if isinstance(x, torch.Tensor):
             return True
-    if is_tf_available():
-        import tensorflow as tf
-
-        if isinstance(x, tf.Tensor):
-            return True
 
     return isinstance(x, np.ndarray)
-
 
 def _is_numpy(x):
     return isinstance(x, np.ndarray)
@@ -77,9 +71,7 @@ def is_torch_dtype(x):
 
 
 def _is_tensorflow(x):
-    import tensorflow as tf
-
-    return isinstance(x, tf.Tensor)
+    return False
 
 
 def is_tf_tensor(x):
@@ -90,13 +82,7 @@ def is_tf_tensor(x):
 
 
 def _is_tf_symbolic_tensor(x):
-    import tensorflow as tf
-
-    # the `is_symbolic_tensor` predicate is only available starting with TF 2.14
-    if hasattr(tf, "is_symbolic_tensor"):
-        return tf.is_symbolic_tensor(x)
-    return type(x) == tf.Tensor
-
+    return False
 
 def is_tf_symbolic_tensor(x):
     """
