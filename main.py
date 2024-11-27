@@ -40,7 +40,7 @@ def main():
         required=True,
         help="Specify the function to run"
     )
-    sub_parser.add_argument("-s", "--source", required=True, help="Specify the source directory")
+    sub_parser.add_argument("-s", "--source", help="Specify the source directory")
     sub_parser.add_argument("-v", "--interarrival", action="store_true", help="Specify if in scheduling plot, plot interarrival histograms")
     sub_parser.add_argument("-f", "--fast", action="store_true", help="Specify if in plot_link_data, only priliminary data should be plotted")
     sub_parser.add_argument("-c", "--config", help="Specify the configuration file")
