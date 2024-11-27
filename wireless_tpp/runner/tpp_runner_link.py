@@ -106,37 +106,24 @@ class TPPRunnerLinkQuality():
     def _init_model(self):
         """Initialize the model.
         """
-        self.use_torch = self.runner_config.base_config.backend == Backend.Torch
+        self.use_torch = True
 
-        if self.use_torch:
-            from easy_tpp.utils import set_seed
-            from easy_tpp.model.torch_model.torch_basemodel import TorchBaseModel
-            from easy_tpp.torch_wrapper import TorchModelWrapper
-            from easy_tpp.utils import count_model_params
-            set_seed(self.runner_config.trainer_config.seed)
+        from wireless_tpp.utils import set_seed
+        from wireless_tpp.model.basemodel import TorchBaseModel
+        from wireless_tpp.torch_wrapper import TorchModelWrapper
+        from wireless_tpp.utils import count_model_params
+        set_seed(self.runner_config.trainer_config.seed)
 
-            self.model = TorchBaseModel.generate_model_from_config(model_config=self.runner_config.model_config)
-            self.model_wrapper = TorchModelWrapper(self.model,
-                                                   self.runner_config.base_config,
-                                                   self.runner_config.model_config,
-                                                   self.runner_config.trainer_config,
-                                                   self.runner_config.prediction_config
-                                                   )
-            num_params = count_model_params(self.model)
-
-        else:
-            from easy_tpp.utils.tf_utils import set_seed
-            from easy_tpp.model.tf_model.tf_basemodel import TfBaseModel
-            from easy_tpp.tf_wrapper import TfModelWrapper
-            from easy_tpp.utils.tf_utils import count_model_params
-            set_seed(self.runner_config.trainer_config.seed)
-
-            self.model = TfBaseModel.generate_model_from_config(model_config=self.runner_config.model_config)
-            self.model_wrapper = TfModelWrapper(self.model,
+        self.model = TorchBaseModel.generate_model_from_config(model_config=self.runner_config.model_config)
+        self.model_wrapper = TorchModelWrapper(self.model,
                                                 self.runner_config.base_config,
                                                 self.runner_config.model_config,
-                                                self.runner_config.trainer_config)
-            num_params = count_model_params()
+                                                self.runner_config.trainer_config,
+                                                self.runner_config.prediction_config
+                                                )
+        num_params = count_model_params(self.model)
+
+
 
         info_msg = f'Num of model parameters {num_params}'
         logger.info(info_msg)

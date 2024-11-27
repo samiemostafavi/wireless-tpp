@@ -85,18 +85,7 @@ def is_tf_available():
 
 
 def is_tf_gpu_available():
-    if is_tf_available():
-        import tensorflow as tf
-        if tf.__version__ >= '2.0':
-            return bool(tf.config.list_physical_devices("GPU"))
-        else:
-            from tensorflow.python.client import device_lib
-            local_device_protos = device_lib.list_local_devices()
-            for device in local_device_protos:
-                if device.device_type == 'GPU':
-                    return True
-    else:
-        return False
+    return False
 
 
 def is_torch_mps_available():
