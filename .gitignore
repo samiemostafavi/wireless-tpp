@@ -34,3 +34,5 @@ data/
 config/
 *.lseq
 *.parquet
+
+*.egg-info/
