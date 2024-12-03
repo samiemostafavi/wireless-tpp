@@ -16,6 +16,8 @@
 
 `WirelessTPP` is a development toolkit for [Mixture Density Networks](https://reference.wolfram.com/language/tutorial/NeuralNetworksRegressionWithUncertainty.html) (MDN) and [Temporal Point Process](https://mathworld.wolfram.com/TemporalPointProcess.html) (TPP) for temporal performance prediction in Openairinterface5G.
 
+We use EDAF as a dependent project which collects the data from all over the 5G network.
+
 
 ## Model List <a href='#top'>[Back to Top]</a>
 <span id='model-list'/>
