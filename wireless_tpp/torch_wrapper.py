@@ -414,17 +414,16 @@ class TorchModelWrapper:
         if phase is not RunnerPhase.PREDICT:
             return None
         
-        if self.model_id == 'THP':
-            pred_dtime, pred_type, label_dtime, label_type = self.model.predict_multi_step_since_last_event(batch=batch)
-            pred_dtime = pred_dtime.detach().cpu().numpy()
-            pred_type = pred_type.detach().cpu().numpy()
-            label_dtime = label_dtime.detach().cpu().numpy()
-            label_type = label_type.detach().cpu().numpy()
-            return (pred_dtime, pred_type), (label_dtime, label_type)
-        else:
-            # [batch_size, seq_len, num_samples_boundary, event_num]
-            pred_samples, label_dtime, label_type = self.model.generate_samples_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
-            pred_samples = pred_samples.detach().cpu().numpy()
-            label_dtime = label_dtime.detach().cpu().numpy()
-            label_type = label_type.detach().cpu().numpy()
-            return pred_samples, (label_dtime, label_type)
+        dtimes_samples, num_rbs_samples, label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs = self.model.generate_samples_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
+        dtimes_samples = dtimes_samples.detach().cpu().numpy()
+        num_rbs_samples = num_rbs_samples.detach().cpu().numpy()
+        label_dtime = label_dtime.detach().cpu().numpy()
+        label_time = label_time.detach().cpu().numpy()
+        label_type = label_type.detach().cpu().numpy()
+        slot_seqs = slot_seqs.detach().cpu().numpy()
+        len_seqs = len_seqs.detach().cpu().numpy()
+        mcs_seqs = mcs_seqs.detach().cpu().numpy()
+        mac_retx_seqs = mac_retx_seqs.detach().cpu().numpy()
+        rlc_failed_seqs = rlc_failed_seqs.detach().cpu().numpy()
+        num_rbs_seqs = num_rbs_seqs.detach().cpu().numpy()
+        return (dtimes_samples,num_rbs_samples), (label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs)

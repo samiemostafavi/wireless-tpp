@@ -567,49 +567,33 @@ class IntensityFreeScheduling(TorchBaseModel):
         Returns:
             tuple: tensors of dtime and type prediction, [batch_size, seq_len].
         """
-        mcs_seq, time_seq, time_delta_seq, event_seq, _, _ = batch
+        slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs, time_seqs, time_delta_seqs_transformed, type_seqs, batch_non_pad_mask, attention_mask = batch
 
-        batch_size, seq_len = time_delta_seq[:, :-1].shape
-        if not self.is_prior:
-            # [batch_size, seq_len, hidden_size]
-            context = self.forward(mcs_seq[:, :-1], time_delta_seq[:, :-1], event_seq[:, :-1])
+        # 1. compute event-loglik
+        # [batch_size, seq_len, hidden_size]
+        enc_out = self.forward(
+            slot_seqs[:, :-1],
+            len_seqs[:, :-1], 
+            mcs_seqs[:, :-1], 
+            mac_retx_seqs[:, :-1], 
+            rlc_failed_seqs[:, :-1], 
+            num_rbs_seqs[:, :-1],
+            time_seqs[:, :-1], 
+            type_seqs[:, :-1], 
+            attention_mask[:, :-1, :-1]
+        )
 
-            # [batch_size, seq_len, 3 * num_mix_components]
-            raw_params = self.linear(context)
+        # select the last output
+        enc_out = enc_out[:, -1:, :]
 
-            # [batch_size, seq_len, num_marks]
-            mark_logits = torch.log_softmax(self.mark_linear(context), dim=-1)
-        else:
-            # Unsqueeze to add batch and sequence dimensions
-            # Shape: [1, 1, 3 * num_mix_components]
-            expanded_linear = self.linear.unsqueeze(0).unsqueeze(0)  
-
-            # Repeat the tensor across batch and sequence dimensions
-            # Shape: [batch_size, seq_len, 3 * num_mix_components]
-            expanded_linear = expanded_linear.repeat(batch_size, seq_len, 1)
-
-            # [batch_size, seq_len, 3 * num_mix_components]
-            raw_params = expanded_linear
-
-            # Unsqueeze to add batch and sequence dimensions
-            # Shape: [1, 1, num_marks]
-            expanded_mark_linear = self.mark_linear.unsqueeze(0).unsqueeze(0)  
-
-            # Repeat the tensor across batch and sequence dimensions
-            # Shape: [batch_size, seq_len, num_marks]
-            expanded_mark_linear = expanded_mark_linear.repeat(batch_size, seq_len, 1)
-
-            # [batch_size, seq_len, num_marks]
-            mark_logits = torch.log_softmax(expanded_mark_linear, dim=-1)
+        # [batch_size, seq_len, 3 * num_mix_components]
+        raw_params = self.dtime_linear(enc_out)
 
         locs = raw_params[..., :self.num_mix_components]
         log_scales = raw_params[..., self.num_mix_components: (2 * self.num_mix_components)]
         log_weights = raw_params[..., (2 * self.num_mix_components):]
 
-        # only select the last in seq_len
-        locs, log_scales, log_weights = locs[:, -1:, :], log_scales[:, -1:, :], log_weights[:, -1:, :]
-
-        log_scales = clamp_preserve_gradients(log_scales, -10.0, 2.0)
+        log_scales = clamp_preserve_gradients(log_scales, -10.0, 3.0)
         log_weights = torch.log_softmax(log_weights, dim=-1)
         inter_time_dist = NormalMixtureDistribution(
             locs=locs,
@@ -618,11 +602,11 @@ class IntensityFreeScheduling(TorchBaseModel):
             mean_inter_time=self.mean_inter_time,
             std_inter_time=self.std_inter_time
         )
-
         dtimes_samples = inter_time_dist.sample((prediction_config['num_samples_dtime'],))
 
-        event_type_dist = Categorical(logits=mark_logits)
-        event_type_samples = event_type_dist.sample((prediction_config['num_samples_event_type'],))
+        num_rbs_logits = torch.log_softmax(self.num_rbs_linear(enc_out), dim=-1)
+        num_rbs_dist = Categorical(logits=num_rbs_logits)
+        num_rbs_samples = num_rbs_dist.sample((prediction_config['num_samples_event_type'],))
 
-        mcs_seq_label, time_seq_label, time_delta_seq_label, event_seq_label, _, _ = batch
-        return (dtimes_samples, event_type_samples), time_delta_seq_label, event_seq_label
+        slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs, time_seqs, time_delta_seqs_transformed, type_seqs, _, _ = batch
+        return dtimes_samples, num_rbs_samples, time_delta_seqs_transformed, time_seqs, type_seqs, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs
