@@ -231,6 +231,8 @@ class EventSampler(nn.Module):
         # Transform accepted times back to the original time scale
         if self.transform is not None:
             res_original_scale = self.transform(res)  # [batch_size, seq_len, num_sample]
-        
+        else:
+            res_original_scale = res
+            
         # add a upper bound here in case it explodes, e.g., in ODE models
         return res_original_scale.clamp(max=1e5), weights

@@ -95,7 +95,7 @@ def plot_data(args):
                 #SCHED_OFFSET_S=0.004 # 4ms which is 8*slot_duration_ms
                 SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
             )
-            if prev_arrival_ts is not 0:
+            if prev_arrival_ts != 0:
                 delta_times_ms_this_db.append((packet['ip.in.timestamp']-prev_arrival_ts+prev_end_ts)*1000)
             prev_arrival_ts = packet['ip.in.timestamp']
             slot_num_arr_this_db.append(slot_num)
@@ -183,10 +183,27 @@ def create_training_dataset(args):
 
     history_window_size = window_config['size']
 
+    # figure out the unique packet sizes in all databases
     packet_sizes_set = set()
+    for result_database_file, time_mask in zip(result_database_files, time_masks):
+        pacekt_analyzer = ULPacketAnalyzer(result_database_file)
+        end_ts = pacekt_analyzer.last_ueip_ts
+        begin_ts = pacekt_analyzer.first_ueip_ts
+        experiment_length_ts = end_ts - begin_ts
+        packets = pacekt_analyzer.figure_packet_arrivals_from_ts(begin_ts+experiment_length_ts*time_mask[0], begin_ts+experiment_length_ts*time_mask[1])
+        for packet in packets:
+            if len(filter_packet_sizes) > 0 and packet['ip.in.length'] not in filter_packet_sizes:
+                continue
+            packet_sizes_set.add(int(packet['ip.in.length']))
+    dim_process = len(list(packet_sizes_set))
+    logger.info(f"Number of unique packet sizes and dim_process: {dim_process}")
+    # sort packet_sizes_set and make a dict to map packet sizes to integers
+    packet_sizes_sorted_list = sorted(list(packet_sizes_set))
+    psize_eventtype_mapping = {packet_size: idx for idx, packet_size in enumerate(packet_sizes_sorted_list)}
+    logger.info(f"Packet sizes dict: {psize_eventtype_mapping}")
+
     dataset = []
     for result_database_file, time_mask in zip(result_database_files, time_masks):
-
         # initiate analyzers
         pacekt_analyzer = ULPacketAnalyzer(result_database_file)
         scheduling_analyzer = ULSchedulingAnalyzer(
@@ -203,20 +220,19 @@ def create_training_dataset(args):
         experiment_length_ts = end_ts - begin_ts
         logger.info(f"Experiment duration: {(experiment_length_ts)} seconds")
         logger.info(f"Filtering packets from {begin_ts+experiment_length_ts*time_mask[0]} to {begin_ts+experiment_length_ts*time_mask[1]}, length: {experiment_length_ts*time_mask[1]-experiment_length_ts*time_mask[0]} seconds")
-        packets = pacekt_analyzer.figure_packettx_from_ts(begin_ts+experiment_length_ts*time_mask[0], begin_ts+experiment_length_ts*time_mask[1])
+        packets = pacekt_analyzer.figure_packet_arrivals_from_ts(begin_ts+experiment_length_ts*time_mask[0], begin_ts+experiment_length_ts*time_mask[1])
         logger.info(f"Number of packets for this duration: {len(packets)}")
 
         # sort the packets in case they are not sorted
-        packets = sorted(packets, key=lambda x: x['ip.in_t'], reverse=False)
+        packets = sorted(packets, key=lambda x: x['ip.in.timestamp'], reverse=False)
 
         packet_arrival_events = []
         last_event_ts = 0
         for packet in packets:
-            if len(filter_packet_sizes) > 0 and packet['len'] not in filter_packet_sizes:
+            if len(filter_packet_sizes) > 0 and packet['ip.in.length'] not in filter_packet_sizes:
                 continue
-            packet_sizes_set.add(int(packet['len']))
             frame_start_ts, frame_num, slot_num = scheduling_analyzer.find_frame_slot_from_ts(
-                timestamp=packet['ip.in_t'],
+                timestamp=packet['ip.in.timestamp'],
                 #SCHED_OFFSET_S=0.002 # 2ms which is 4*slot_duration_ms
                 #SCHED_OFFSET_S=0.004 # 4ms which is 8*slot_duration_ms
                 SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
@@ -236,10 +252,10 @@ def create_training_dataset(args):
 
             packet_arrival_events.append(
                 {
-                    'type_event' : packet['len'],
+                    'type_event' : psize_eventtype_mapping[packet['ip.in.length']],
                     'time_since_start' : time_since_frame0,
                     'time_since_last_event' : time_since_last_event,
-                    'timestamp' : packet['ip.in_t']
+                    'timestamp' : packet['ip.in.timestamp']
                 }
             )
         
@@ -272,9 +288,6 @@ def create_training_dataset(args):
 
     # shuffle
     random.shuffle(dataset)
-
-    dim_process = len(list(packet_sizes_set))
-    logger.info(f"Number of unique packet sizes and dim_process: {dim_process}")
 
     # print length of dataset
     logger.info(f"Number of total entries in dataset: {len(dataset)}")

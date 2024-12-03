@@ -1,4 +1,5 @@
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from pathlib import Path
 import yaml, pickle, json
 import numpy as np
@@ -10,7 +11,7 @@ from wireless_tpp.utils import logger
 def generate_predictions(args):
 
     # read configuration from args.config
-    dataset_config_path = Path(args.source) / "training_datasets" / args.name / 'config.json'
+    dataset_config_path = Path(args.source) / "packet_arrival" / "datasets" / args.name / 'config.json'
     with open(dataset_config_path, 'r') as f:
         dataset_config = json.load(f)
 
@@ -18,18 +19,19 @@ def generate_predictions(args):
     prediction_config_path = Path(args.config)
     with open(prediction_config_path, 'r') as f:
         prediction_config = json.load(f)
+    prediction_config = prediction_config[args.configname]
     batch_size = prediction_config['batch_size']
     gpu = prediction_config['gpu']
     prediction_config['method'] = args.predict
 
-    model_path = Path(args.source) / "training_results" / args.name / args.id
+    model_path = Path(args.source) / "packet_arrival" / "trained_models" / args.name / args.id
     yaml_file = next(model_path.glob("*.yaml"))
     with open(yaml_file, 'r') as file:
         training_output_config = yaml.load(file, Loader=yaml.FullLoader)
 
     # fix the base_dir for the generation stage
     training_base_dir = training_output_config['base_config']['base_dir']
-    prediction_base_dir = training_base_dir.replace("training_results", "prediction_results")
+    prediction_base_dir = training_base_dir.replace("trained_models", "prediction_results")
 
     experiment_id = f"{training_output_config['base_config']['model_id']}_gen"
     # Transform the dict to match training configuration format
@@ -94,11 +96,11 @@ def generate_predictions(args):
 def plot_predictions(args):
 
     # read configuration from args.config
-    dataset_config_path = Path(args.source) / "training_datasets" / args.name / 'config.json'
+    dataset_config_path = Path(args.source) / "packet_arrival" / "datasets" / args.name / 'config.json'
     with open(dataset_config_path, 'r') as f:
         dataset_config = json.load(f)
     
-    model_path = Path(args.source) / "prediction_results" / args.name / args.id
+    model_path = Path(args.source) / "packet_arrival" / "prediction_results" / args.name / args.id
     yaml_file = next(model_path.glob("*.yaml"))
     with open(yaml_file, 'r') as file:
         generation_output_config = yaml.load(file, Loader=yaml.FullLoader)
@@ -108,12 +110,46 @@ def plot_predictions(args):
         data = pickle.load(file)
 
     model_id = generation_output_config['base_config']['model_id']
-    if model_id == 'IntensityFree2D' and generation_output_config['prediction_config']['method'] == 'probabilistic':
+    if model_id == 'IntensityFree2DPacketArrival' and generation_output_config['prediction_config']['method'] == 'probabilistic':
         plot_probability_predictions_2D(dataset_config, generation_output_config, data, model_path, args)
-    elif model_id == 'IntensityFree' and generation_output_config['prediction_config']['method'] == 'probabilistic':
+    elif model_id == 'IntensityFreePacketArrival' and generation_output_config['prediction_config']['method'] == 'probabilistic':
         plot_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
+    elif model_id == 'IntensityFreePacketArrival' and generation_output_config['prediction_config']['method'] == 'sampling':
+        plot_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
+
+def transform_list(input_list, max_period):
+    # Initialize an empty list to store the transformed values
+    transformed_list = []
+    
+    # Keep track of period-based offset for each segment
+    offset = 0
+    previous_value = None
+
+    for i, value in enumerate(input_list):
+        # Check if there is a decrease or reset to a lower number (assumed new period start)
+        if previous_value is not None and value < previous_value:
+            offset += max_period  # Decrease offset by max_period
+        
+        # Calculate and append the new value
+        transformed_value = value + offset
+        transformed_list.append(transformed_value)
+        
+        # Update the previous value
+        previous_value = value
+    
+    return transformed_list
 
 def plot_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args):
+
+    # plot history
+    history_dtime_data = []
+    history_event_type_data = []
+    for batch in data['label']:
+        history_dtime_data.append(batch[0])
+        history_event_type_data.append(batch[1])
+
+    concatenated_history_dtime = np.concatenate(history_dtime_data, axis=0)
+    concatenated_history_event_type = np.concatenate(history_event_type_data, axis=0)
 
     dtime_data = []
     event_type_data = []
@@ -129,6 +165,14 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     dtime_logprob_pred = concatenated_label_dtime[ar_index,:]
     dtime_prob_pred = np.exp(dtime_logprob_pred)
 
+    history_dtime = concatenated_history_dtime[ar_index,:]
+    history_time = np.cumsum(history_dtime)
+    history_event_type = concatenated_history_event_type[ar_index,:]
+
+    fig = make_subplots(rows=1, cols=1, subplot_titles=("Predictions"), specs=[[{"secondary_y": True}]])
+
+    history_time = transform_list(history_time, 1024*10.0) # 1024 (max_num_frames) * 10ms (20 slots each 0.5 ms) is the max period
+
     # dtime samples
     prediction_config = generation_output_config['prediction_config']
     sample_dtime_min = prediction_config['probability_generation']['sample_dtime_min']
@@ -136,14 +180,49 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     num_steps_dtime = prediction_config['probability_generation']['num_steps_dtime']
     dtime_samples = np.linspace(sample_dtime_min, sample_dtime_max, num_steps_dtime)
     
-    # Create a scatter plot using plotly
-    fig = go.Figure(data=go.Scatter(x=dtime_samples, y=dtime_prob_pred, mode='markers'))
-    fig.update_layout(title='Predictions', xaxis_title='Time', yaxis_title='Probability')
+    fig.add_trace(
+        go.Scatter(
+            x=history_time[:-1], 
+            y=np.ones(len(history_time[:-1])),
+            mode='markers+text', 
+            text=np.array(history_event_type[:-1]),
+            textposition='top center',
+            name='History events'
+        ),
+        row=1, col=1,
+        secondary_y=False
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=[history_time[-1]], 
+            y=[1],
+            mode='markers+text', 
+            text=[history_event_type[-1]],
+            textposition='top center',
+            name='Label event'
+        ),
+        row=1, col=1,
+        secondary_y=False
+    )
+
+    fig.add_trace(
+        go.Scatter(x=history_time[-2]+dtime_samples, y=dtime_prob_pred, mode='markers', name='predictions'),
+        row=1, col=1,
+        secondary_y=True
+    )
+
+    fig.update_layout(
+        title="Predictions and History",
+        xaxis_title="Time [ms]",
+        yaxis_title="History Events [event type]",
+        yaxis2_title="Prediction Probability"
+    )
     fig.write_html(model_path / "prob_delta_times.html")
 
-    event_types_length = concatenated_label_event_type.shape[1] # event_types length
-    event_types_probs = np.exp(concatenated_label_event_type[ar_index,:])
-
+    # concatenated_label_event_type shape: (num_batches, 1, num_event_types)
+    event_types_length = concatenated_label_event_type.shape[2] # event_types length
+    event_types_probs = np.exp(concatenated_label_event_type[ar_index,0,:])
 
     # Define class labels
     class_labels = [f"Event type {i}" for i in range(event_types_length)]
@@ -171,19 +250,88 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     )
     fig.write_html(model_path / "prob_event_types.html")
 
-    # Optionally, adjust y-axis to range [0, 1] if dealing with probabilities
-    #fig.update_yaxes(range=[0, 1])
-    # calculate the rmse of dtime
-    #concatenated_label_dtime = np.concatenate(data['label'], axis=1)
-    #label_dtime = concatenated_label_dtime[1, :, -1]
-    #concatenated_pred_dtime_mean = np.concatenate(data['dtime_mean_pred'], axis=0)
-    #pred_dtime = concatenated_pred_dtime_mean[:, 0]
-    #rmse = np.sqrt(np.mean((pred_dtime - label_dtime) ** 2))
-    #logger.info(f"RMSE: {rmse}")
+def plot_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, args):
 
-    # calculate the average loglikelihood
-    #loglikelihood = np.array(data['loglikelihood']).sum()/len(pred_dtime)
-    #logger.info(f"loglikelihood: {loglikelihood}")
+    # plot history
+    history_dtime_data = []
+    history_event_type_data = []
+    for batch in data['label']:
+        history_dtime_data.append(batch[0])
+        history_event_type_data.append(batch[1])
+
+    concatenated_history_dtime = np.concatenate(history_dtime_data, axis=0)
+    concatenated_history_event_type = np.concatenate(history_event_type_data, axis=0)
+
+    dtime_data = []
+    event_type_data = []
+    for batch in data['pred']:
+        dtime_data.append(batch[0])
+        event_type_data.append(batch[1])
+    concatenated_label_dtime = np.concatenate(dtime_data, axis=1)
+    concatenated_label_event_type = np.concatenate(event_type_data, axis=1)
+    # concatenated_label_* shape: (num_gen_samples, num all samples in batches, 1)
+
+    max_index = concatenated_label_dtime.shape[1]
+    ar_index = np.random.randint(0, max_index, size=1)[0]
+    assert ar_index < max_index, f"Index out of range: {ar_index} > {max_index}"
+    dtime_pred = concatenated_label_dtime[:, ar_index, 0]
+    event_type_pred = concatenated_label_event_type[:, ar_index, 0]
+    # dtime_pred and event_type_pred shape: (num_gen_samples, )
+
+    # take the mean
+    dtime_pred = np.mean(dtime_pred)
+    event_type_pred = np.mean(event_type_pred)
+
+    history_dtime = concatenated_history_dtime[ar_index,:]
+    history_time = np.cumsum(history_dtime)
+    history_event_type = concatenated_history_event_type[ar_index,:]
+
+    fig = make_subplots(rows=1, cols=1, subplot_titles=("Predictions"))
+
+    history_time = transform_list(history_time, 1024*10.0) # 1024 (max_num_frames) * 10ms (20 slots each 0.5 ms) is the max period
+    
+    fig.add_trace(
+        go.Scatter(
+            x=history_time[:-1], 
+            y=np.ones(len(history_time[:-1])),
+            mode='markers+text', 
+            text=np.array(history_event_type[:-1]),
+            textposition='top center',
+            name='History events'
+        ),
+        row=1, col=1
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=[history_time[-1]], 
+            y=[1],
+            mode='markers+text', 
+            text=[history_event_type[-1]],
+            textposition='top center',
+            name='Label event'
+        ),
+        row=1, col=1
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=[history_time[-2]+dtime_pred], 
+            y=[1], 
+            mode='markers+text',
+            text=[event_type_pred],
+            textposition='top center',
+            name='predictions'
+        ),
+        row=1, col=1
+    )
+
+    fig.update_layout(
+        title="Predictions and History",
+        xaxis_title="Time [ms]",
+        yaxis_title="History Events [event type]",
+    )
+    fig.write_html(model_path / "pred_sample_dtimes.html")
 
 
 def plot_probability_predictions_2D(dataset_config, generation_output_config, data, model_path, args):

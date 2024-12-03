@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.distributions as D
+from torch.nn import functional as F
 
 from wireless_tpp.model.baselayer import EncoderLayer, MultiHeadAttention, TimePositionalEncoding, ScaledSoftplus
 from wireless_tpp.model.basemodel import TorchBaseModel
@@ -19,17 +20,22 @@ class THPLinkQuality(TorchBaseModel):
         """
         super(THPLinkQuality, self).__init__(model_config)
 
+        self.std_inter_time = model_config.get("std_inter_time", 1.0)
+        self.transform = D.AffineTransform(loc=0, scale=self.std_inter_time)
+
         self.layer_type_emb = nn.Embedding(self.num_event_types_pad,  # have padding
                                             self.hidden_size,
                                             padding_idx=self.pad_token_id)
 
-        self.event_sampler = EventSampler(num_sample=self.gen_config.num_sample,
-                                              num_exp=self.gen_config.num_exp,
-                                              over_sample_rate=self.gen_config.over_sample_rate,
-                                              patience_counter=self.gen_config.patience_counter,
-                                              num_samples_boundary=self.gen_config.num_samples_boundary,
-                                              dtime_max=self.gen_config.dtime_max,
-                                              device=self.device)
+        if self.gen_config:
+            self.event_sampler = EventSampler(num_sample=self.gen_config.num_sample,
+                                                num_exp=self.gen_config.num_exp,
+                                                over_sample_rate=self.gen_config.over_sample_rate,
+                                                patience_counter=self.gen_config.patience_counter,
+                                                num_samples_boundary=self.gen_config.num_samples_boundary,
+                                                dtime_max=self.gen_config.dtime_max,
+                                                device=self.device,
+                                                transform=self.transform)
 
         self.d_model = model_config.hidden_size
         self.d_time = model_config.time_emb_size
@@ -350,14 +356,27 @@ class THPLinkQuality(TorchBaseModel):
         Returns:
             tuple: tensors of dtime and type prediction, [batch_size, seq_len].
         """
-        time_seq_label, time_delta_seq_label, event_seq_label, batch_non_pad_mask_label, type_mask_label = batch
+        if self.includes_mcs:
+            time_seq_label, time_delta_seq_label, event_seq_label, mcs_seq_label, batch_non_pad_mask_label, type_mask_label = batch
 
-        if not forward:
-            time_seq = time_seq_label[:, :-1]
-            time_delta_seq = time_delta_seq_label[:, :-1]
-            event_seq = event_seq_label[:, :-1]
+            if not forward:
+                time_seq = time_seq_label[:, :-1]
+                time_delta_seq = time_delta_seq_label[:, :-1]
+                event_seq = event_seq_label[:, :-1]
+                mcs_seq = mcs_seq_label[:, :-1]
+            else:
+                time_seq, time_delta_seq, event_seq, mcs_seq = time_seq_label, time_delta_seq_label, event_seq_label, mcs_seq_label
+
         else:
-            time_seq, time_delta_seq, event_seq = time_seq_label, time_delta_seq_label, event_seq_label
+            time_seq_label, time_delta_seq_label, event_seq_label, batch_non_pad_mask_label, type_mask_label = batch
+            
+            if not forward:
+                time_seq = time_seq_label[:, :-1]
+                time_delta_seq = time_delta_seq_label[:, :-1]
+                event_seq = event_seq_label[:, :-1]
+            else:
+                time_seq, time_delta_seq, event_seq = time_seq_label, time_delta_seq_label, event_seq_label
+        
 
         #if type(self).__name__ == 'IntensityFree':
         #    probs_t = self.predict_prob_at_every_event(batch)
@@ -388,6 +407,9 @@ class THPLinkQuality(TorchBaseModel):
         # seq_len is not relevant since we only look at the last event
         intensities = intensities[:,-1,:,:]  # Shape: [batch_size, num_steps_dtime, event_num]
 
+        # Transform time_since_last_event to match the time scale of the model
+        time_since_last_event = self.transform.inv(time_since_last_event)
+
         # Compute the cumulative intensity over time using cumulative trapezoidal integration
         delta_t = time_since_last_event[1:] - time_since_last_event[:-1]  # Time differences
         mid_intensities = (intensities[:, 1:, :] + intensities[:, :-1, :]) / 2  # Average intensities
@@ -407,6 +429,9 @@ class THPLinkQuality(TorchBaseModel):
 
         # Compute PDF
         pdf_t = lambda_t * S_t  # [batch_size, num_steps_dtime - 1]
+
+        # Normalize PDF
+        pdf_t = pdf_t / self.transform.scale
         dtimes_logprob = torch.log(pdf_t)
 
         # Compute probabilities for each event type
@@ -414,7 +439,8 @@ class THPLinkQuality(TorchBaseModel):
         lambda_t_total = lambda_k_t.sum(dim=-1, keepdim=True) + self.eps  # [batch_size, num_steps_dtime-1, 1]
         types_probs_pred = torch.log(lambda_k_t / lambda_t_total)  # [batch_size, num_steps_dtime-1, event_num]
 
-        return (dtimes_logprob, types_probs_pred) , time_delta_seq_label, event_seq_label
+        return (dtimes_logprob, types_probs_pred) , time_delta_seq_label, time_seq_label, event_seq_label
+
     
     def predict_one_step_at_every_event(self, batch):
         """One-step prediction for every event in the sequence.
@@ -469,6 +495,46 @@ class THPLinkQuality(TorchBaseModel):
         # [batch_size, seq_len]
         dtimes_pred = torch.sum(accepted_dtimes * weights, dim=-1)  # compute the expected next event time
         return dtimes_pred, types_pred
+
+    def generate_samples_one_step_since_last_event(self, batch, forward=False):
+
+        time_seq_label, time_delta_seq_label, event_seq_label, batch_non_pad_mask_label, type_mask_label = batch
+        time_seq = time_seq_label[:, :-1]
+        time_delta_seq = time_delta_seq_label[:, :-1]
+        event_seq = event_seq_label[:, :-1]
+        
+        # [batch_size, seq_len]
+        dtime_boundary = time_delta_seq + self.event_sampler.dtime_max
+
+        # [batch_size, 1, num_sample]
+        accepted_dtimes, weights = self.event_sampler.draw_next_time_one_step(time_seq,
+                                                        time_delta_seq,
+                                                        event_seq,
+                                                        dtime_boundary,
+                                                        self.compute_intensities_at_sample_times,
+                                                        compute_last_step_only=True)
+
+        # [batch_size, 1]
+        dtimes_pred = torch.sum(accepted_dtimes * weights, dim=-1)
+
+        # [batch_size, seq_len, 1, event_num]
+        intensities_at_times = self.compute_intensities_at_sample_times(time_seq,
+                                                                        time_delta_seq,
+                                                                        event_seq,
+                                                                        dtimes_pred[:, :, None],
+                                                                        max_steps=event_seq.size()[1])
+
+        # [batch_size, seq_len, event_num]
+        intensities_at_times = intensities_at_times.squeeze(dim=-2)
+
+        # [batch_size, seq_len]
+        types_pred = torch.argmax(intensities_at_times, dim=-1)
+
+        # [batch_size, 1]
+        types_pred_ = types_pred[:, -1:]
+        dtimes_pred_ = dtimes_pred[:, -1:]
+
+        return dtimes_pred_, types_pred_, time_seq_label, event_seq_label
 
     def predict_multi_step_since_last_event(self, batch, forward=False):
         """Multi-step prediction since last event in the sequence.

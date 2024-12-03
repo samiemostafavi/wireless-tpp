@@ -339,6 +339,8 @@ class TPPRunnerPacketArrival():
             a dict of metrics
         """
         total_loss = 0
+        total_m_dtime_loss = 0
+        total_m_mark_loss = 0
         dtime_loss = 0
         event_loss = 0
         total_num_event = 0
@@ -349,22 +351,26 @@ class TPPRunnerPacketArrival():
         metrics_dict = OrderedDict()
         if phase in [RunnerPhase.TRAIN, RunnerPhase.VALIDATE]:
             for batch in data_loader:
-                batch_loss, batch_num_event, batch_pred, batch_label, batch_mask = \
-                    self.model_wrapper.run_batch(batch, phase=phase)
+                batch_loss, batch_num_event, batch_pred, batch_label, batch_mask, m_dtime_loss, m_mark_loss = \
+                    self.model_wrapper.run_batch_packet_arrival(batch, phase=phase)
 
                 total_loss += batch_loss
                 total_num_event += batch_num_event
+                total_m_mark_loss += m_mark_loss
+                total_m_dtime_loss += m_dtime_loss
                 epoch_pred.append(batch_pred)
                 epoch_label.append(batch_label)
                 epoch_mask.append(batch_mask)
 
             avg_loss = total_loss / total_num_event
+            avg_m_dtime_loss = total_m_dtime_loss / total_num_event
+            avg_m_mark_loss = total_m_mark_loss / total_num_event
 
-            metrics_dict.update({'loglike': -avg_loss, 'num_events': total_num_event})
+            metrics_dict.update({'loglike': -avg_loss, 'num_events': total_num_event, 'dtime_loglike': -avg_m_dtime_loss, 'event_loglike': -avg_m_mark_loss})
 
         else:
             for batch in data_loader:
-                batch_pred, ll_dtime, ll_type, batch_num_event, batch_label = self.model_wrapper.run_batch(batch, phase=phase)
+                batch_pred, ll_dtime, ll_type, batch_num_event, batch_label = self.model_wrapper.run_batch_packet_arrival(batch, phase=phase)
                 total_loss += (ll_dtime+ll_type)
                 dtime_loss += ll_dtime
                 event_loss += ll_type
@@ -392,24 +398,22 @@ class TPPRunnerPacketArrival():
         #        epoch_mask = epoch_mask.astype(bool)
         #if pred_exists and label_exists:
         #    metrics_dict.update(self.metric_functions(epoch_pred, epoch_label, seq_mask=epoch_mask))
-
-        if self.runner_config.base_config.model_id == 'IntensityFree':
-            metrics_dict.update(
-                {
-                    'rmse_dtime' : rmse_dtime_metric_function(epoch_pred, epoch_label),
-                    'rmse_event' : rmse_event_metric_function(epoch_pred, epoch_label),
-                }
-            )
-        elif self.runner_config.base_config.model_id == 'IntensityFree2D':
-            metrics_dict.update(
-                {
-                    'rmse_2d' : rmse_2d_metric_function(epoch_pred, epoch_label),
-                    'rmse_2d_dtime' : rmse_2d_dtime_metric_function(epoch_pred, epoch_label),
-                    'rmse_2d_event' : rmse_2d_event_metric_function(epoch_pred, epoch_label),
-                }
-            )
-        else:
-            metrics_dict.update(self.metric_functions(epoch_pred, epoch_label, seq_mask=epoch_mask))
+        if phase not in [RunnerPhase.TRAIN, RunnerPhase.VALIDATE]:
+            if self.runner_config.base_config.model_id == 'IntensityFreePacketArrival':
+                metrics_dict.update(
+                    {
+                        'rmse_dtime' : rmse_dtime_metric_function(epoch_pred, epoch_label),
+                        'rmse_event' : rmse_event_metric_function(epoch_pred, epoch_label),
+                    }
+                )
+            elif self.runner_config.base_config.model_id == 'IntensityFree2DPacketArrival':
+                metrics_dict.update(
+                    {
+                        'rmse_2d' : rmse_2d_metric_function(epoch_pred, epoch_label),
+                        'rmse_2d_dtime' : rmse_2d_dtime_metric_function(epoch_pred, epoch_label),
+                        'rmse_2d_event' : rmse_2d_event_metric_function(epoch_pred, epoch_label),
+                    }
+                )
 
         if phase == RunnerPhase.PREDICT:
             metrics_dict.update({'pred': epoch_pred, 'label': epoch_label})
@@ -434,7 +438,7 @@ class TPPRunnerPacketArrival():
             return
         
         for batch in data_loader:
-            batch_probs, batch_label = self.model_wrapper.run_batch_probability_generation(batch, phase=phase)
+            batch_probs, batch_label = self.model_wrapper.run_batch_probability_generation_packet_arrival(batch, phase=phase)
             probs_pred.append(batch_probs)
             epoch_label.append(batch_label)
 
@@ -461,7 +465,7 @@ class TPPRunnerPacketArrival():
             return
         
         for batch in data_loader:
-            batch_samples, batch_label = self.model_wrapper.run_batch_sample_generation(batch, phase=phase)
+            batch_samples, batch_label = self.model_wrapper.run_batch_sample_generation_packet_arrival(batch, phase=phase)
             samples_pred.append(batch_samples)
             epoch_label.append(batch_label)
 
