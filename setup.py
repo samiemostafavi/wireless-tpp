@@ -48,7 +48,7 @@ setup(
     name='wireless_tpp',
     version=get_version(),
     description='A tool for applying neural temporal point process on wireless communication data',
-    url = 'https://github.com/samiemostafavi/EasyTemporalPointProcess/',
+    url = 'https://github.com/samiemostafavi/wireless-tpp/',
     author='KTH Royal Institute of Technology',
     packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     include_package_data=True,
