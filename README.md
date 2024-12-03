@@ -119,6 +119,64 @@ python main.py -t scheduling -u create_training_dataset -s data/s63_results -c c
 
 ### Step 3. Train the models
 
+First modify the yaml file `config/training_config.yaml` with the datasets information and the configuration of the model you would like to train.
+
+Train a model (packet arrival)
+```
+python main.py -t packet_arrival -u train_model -f -c config/training_config.yaml -i IF_train_s63_packetarrival_0
+```
+
+Train a model (link quality)
+```
+python main.py -t link_quality -u train_model -f -c config/training_config.yaml -i THP_train_s63_linkquality_0
+```
+
+Train a model (scheduling)
+```
+python main.py -t scheduling -u train_model -f -c config/training_config.yaml -i IF_train_s63_scheduling_0
+```
+
+### Step 4. Validate the models
+
+By running the following commands you can check visually if the model is performing or not. 
+It will take samples from the test dataset, runs predictions on them, and plots the results.
+
+Validate packet arrival model (probabilistic)
+```
+python main.py -t packet_arrival -u generate_predictions -s data/s63_results -p probabilistic -c config/prediction_config.json -g s63_arrival -n test0 -i 1105474_140407072232064_241202-120400
+python main.py -t packet_arrival -u plot_predictions -s data/s63_results -n test0 -i 1117955_140163946500736_241203-075703
+```
+
+Validate packet arrival model (sampling)
+```
+python main.py -t packet_arrival -u generate_predictions -s data/s63_results -p sampling -c config/prediction_config.json -g s63_arrival -n test0 -i 1105474_140407072232064_241202-120400
+python main.py -t packet_arrival -u plot_predictions -s data/s63_results -n test0 -i 1119416_139811246588544_241203-084053
+```
+
+Validate retx link quality model (probabilistic)
+```
+python main.py -t link_quality -u generate_predictions -s data/s63_results -p probabilistic -c config/prediction_config.json -g s63_linkquality -n test0 -i 1106489_139985643180672_241202-123840
+python main.py -t link_quality -u plot_predictions -s data/s63_results -n test0 -i 1121178_140591209673344_241203-091730
+```
+
+Validate retx link quality model (sampling)
+```
+python main.py -t link_quality -u generate_predictions -s data/s63_results -p sampling -c config/prediction_config.json -g s63_linkquality -n test0 -i 1105474_140407072232064_241202-120400
+python main.py -t link_quality -u plot_predictions -s data/s63_results -n test0 -i 1122926_140662824829568_241203-102211
+```
+
+Validate the scheduling model (probabilistic)
+```
+python main.py -t scheduling -u generate_predictions -s data/s63_results -p probabilistic -c config/prediction_config.json -g s63_scheduling -n test0 -i 1112063_140079729623680_241202-162330
+python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1124079_140705547641472_241203-105910 -m 1
+python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1124079_140705547641472_241203-105910 -m 2
+python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1124079_140705547641472_241203-105910 -m 3
+```
+
+Validate the scheduling model (sampling)
+```
+
+```
 
  
 ## Benchmark <a href='#top'>[Back to Top]</a>

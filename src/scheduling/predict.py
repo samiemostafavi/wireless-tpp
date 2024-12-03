@@ -11,7 +11,7 @@ from wireless_tpp.utils import logger
 def generate_predictions(args):
 
     # read configuration from args.config
-    dataset_config_path = Path(args.source) / "training_datasets" / args.name / 'config.json'
+    dataset_config_path = Path(args.source) / "scheduling" / "datasets" / args.name / 'config.json'
     with open(dataset_config_path, 'r') as f:
         dataset_config = json.load(f)
 
@@ -19,18 +19,19 @@ def generate_predictions(args):
     prediction_config_path = Path(args.config)
     with open(prediction_config_path, 'r') as f:
         prediction_config = json.load(f)
+    prediction_config = prediction_config[args.configname]
     batch_size = prediction_config['batch_size']
     gpu = prediction_config['gpu']
     prediction_config['method'] = args.predict
 
-    model_path = Path(args.source) / "training_results" / args.name / args.id
+    model_path = Path(args.source) / "scheduling" / "trained_models" / args.name / args.id
     yaml_file = next(model_path.glob("*.yaml"))
     with open(yaml_file, 'r') as file:
         training_output_config = yaml.load(file, Loader=yaml.FullLoader)
 
     # fix the base_dir for the generation stage
     training_base_dir = training_output_config['base_config']['base_dir']
-    prediction_base_dir = training_base_dir.replace("training_results", "prediction_results")
+    prediction_base_dir = training_base_dir.replace("trained_models", "prediction_results")
 
     experiment_id = f"{training_output_config['base_config']['model_id']}_gen"
     # Transform the dict to match training configuration format
@@ -100,11 +101,11 @@ def generate_predictions(args):
 def plot_predictions(args):
 
     # read configuration from args.config
-    dataset_config_path = Path(args.source) / "training_datasets" / args.name / 'config.json'
+    dataset_config_path = Path(args.source) / "scheduling" / "datasets" / args.name / 'config.json'
     with open(dataset_config_path, 'r') as f:
         dataset_config = json.load(f)
     
-    model_path = Path(args.source) / "prediction_results" / args.name / args.id
+    model_path = Path(args.source) / "scheduling" / "prediction_results" / args.name / args.id
     yaml_file = next(model_path.glob("*.yaml"))
     with open(yaml_file, 'r') as file:
         generation_output_config = yaml.load(file, Loader=yaml.FullLoader)

@@ -388,7 +388,7 @@ class TPPRunnerLinkQuality():
         if phase in [RunnerPhase.TRAIN, RunnerPhase.VALIDATE]:
             for batch in data_loader:
                 batch_loss, batch_num_event, batch_pred, batch_label, batch_mask = \
-                    self.model_wrapper.run_batch(batch, phase=phase)
+                    self.model_wrapper.run_batch_link_quality(batch, phase=phase)
 
                 total_loss += batch_loss
                 total_num_event += batch_num_event
@@ -402,7 +402,7 @@ class TPPRunnerLinkQuality():
 
         else:
             for batch in data_loader:
-                batch_pred, ll_dtime, ll_type, batch_num_event, batch_label = self.model_wrapper.run_batch(batch, phase=phase)
+                batch_pred, ll_dtime, ll_type, batch_num_event, batch_label = self.model_wrapper.run_batch_link_quality(batch, phase=phase)
                 total_loss += (ll_dtime+ll_type)
                 dtime_loss += ll_dtime
                 event_loss += ll_type
@@ -473,7 +473,7 @@ class TPPRunnerLinkQuality():
             return
         
         for batch in data_loader:
-            batch_probs, batch_label = self.model_wrapper.run_batch_probability_generation(batch, phase=phase)
+            batch_probs, batch_label = self.model_wrapper.run_batch_probability_generation_link_quality(batch, phase=phase)
             probs_pred.append(batch_probs)
             epoch_label.append(batch_label)
 
@@ -500,7 +500,7 @@ class TPPRunnerLinkQuality():
             return
         
         for batch in data_loader:
-            batch_samples, batch_label = self.model_wrapper.run_batch_sample_generation(batch, phase=phase)
+            batch_samples, batch_label = self.model_wrapper.run_batch_sample_generation_link_quality(batch, phase=phase)
             samples_pred.append(batch_samples)
             epoch_label.append(batch_label)
 

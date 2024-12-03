@@ -94,6 +94,9 @@ def rmse_dtime_metric_function(predictions, labels, **kwargs):
     Returns:
         float: average rmse of the time predictions.
     """
+    print(predictions)
+    print(np.array(predictions).shape)
+    print(np.array(labels).shape)
     # input prediction shape is [1, 2, batch_size, seq_len]
     # we pick the last element of the sequence and remove the first 2 dims
     # result is [batch_size]

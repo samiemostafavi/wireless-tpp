@@ -11,7 +11,7 @@ from wireless_tpp.utils import logger
 def generate_predictions(args):
 
     # read configuration from args.config
-    dataset_config_path = Path(args.source) / "training_datasets" / args.name / 'config.json'
+    dataset_config_path = Path(args.source) / "link_quality" / "datasets" / args.name / 'config.json'
     with open(dataset_config_path, 'r') as f:
         dataset_config = json.load(f)
 
@@ -19,18 +19,19 @@ def generate_predictions(args):
     prediction_config_path = Path(args.config)
     with open(prediction_config_path, 'r') as f:
         prediction_config = json.load(f)
+    prediction_config = prediction_config[args.configname]
     batch_size = prediction_config['batch_size']
     gpu = prediction_config['gpu']
     prediction_config['method'] = args.predict
 
-    model_path = Path(args.source) / "training_results" / args.name / args.id
+    model_path = Path(args.source) / "link_quality" / "trained_models" / args.name / args.id
     yaml_file = next(model_path.glob("*.yaml"))
     with open(yaml_file, 'r') as file:
         training_output_config = yaml.load(file, Loader=yaml.FullLoader)
 
     # fix the base_dir for the generation stage
     training_base_dir = training_output_config['base_config']['base_dir']
-    prediction_base_dir = training_base_dir.replace("training_results", "prediction_results")
+    prediction_base_dir = training_base_dir.replace("trained_models", "prediction_results")
 
     experiment_id = f"{training_output_config['base_config']['model_id']}_gen"
     # Transform the dict to match training configuration format
@@ -100,11 +101,11 @@ def generate_predictions(args):
 def plot_predictions(args):
 
     # read configuration from args.config
-    dataset_config_path = Path(args.source) / "training_datasets" / args.name / 'config.json'
+    dataset_config_path = Path(args.source) / "link_quality" / "datasets" / args.name / 'config.json'
     with open(dataset_config_path, 'r') as f:
         dataset_config = json.load(f)
     
-    model_path = Path(args.source) / "prediction_results" / args.name / args.id
+    model_path = Path(args.source) / "link_quality" / "prediction_results" / args.name / args.id
     yaml_file = next(model_path.glob("*.yaml"))
     with open(yaml_file, 'r') as file:
         generation_output_config = yaml.load(file, Loader=yaml.FullLoader)
@@ -114,13 +115,11 @@ def plot_predictions(args):
         data = pickle.load(file)
 
     model_id = generation_output_config['base_config']['model_id']
-    if model_id == 'IntensityFree2D' and generation_output_config['prediction_config']['method'] == 'probabilistic':
-        plot_probability_predictions_2D(dataset_config, generation_output_config, data, model_path, args)
-    elif model_id == 'IntensityFree' and generation_output_config['prediction_config']['method'] == 'probabilistic':
+    if model_id == 'IntensityFreeLinkQuality' and generation_output_config['prediction_config']['method'] == 'probabilistic':
         plot_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
-    elif model_id == 'THP' and generation_output_config['prediction_config']['method'] == 'probabilistic':
+    elif model_id == 'THPLinkQuality' and generation_output_config['prediction_config']['method'] == 'probabilistic':
         plot_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
-    elif model_id == 'THP' and generation_output_config['prediction_config']['method'] == 'sampling':
+    elif model_id == 'THPLinkQuality' and generation_output_config['prediction_config']['method'] == 'sampling':
         plot_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
 
 
@@ -156,9 +155,8 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
     max_index = concatenated_label_dtime.shape[0]
     ar_index = np.random.randint(0, max_index, size=1)[0]
     assert ar_index < max_index, f"Index out of range: {ar_index} > {max_index}"
-    dtime_pred = concatenated_label_dtime[ar_index,:]
-    dtime_pred = np.cumsum(dtime_pred)
-    event_type_pred = concatenated_label_event_type[ar_index]
+    dtime_pred = concatenated_label_dtime[ar_index,0]
+    event_type_pred = concatenated_label_event_type[ar_index,0]
 
     history_dtime = concatenated_history_dtime[ar_index,:]
     history_time = np.cumsum(history_dtime)
@@ -166,7 +164,7 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
     if includes_mcs:
         history_mcs = concatenated_history_mcs[ar_index,:]
 
-    
+
     # Create a subplot with 2 rows and 1 column
     if includes_mcs:
         fig = make_subplots(rows=2, cols=1, subplot_titles=("Predictions", "History MCS"))
@@ -186,7 +184,7 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
     )
 
     fig.add_trace(
-        go.Scatter(x=history_time[-2]+dtime_pred, y=event_type_pred, mode='markers', name='predictions'),
+        go.Scatter(x=[history_time[-1]+dtime_pred], y=[event_type_pred], mode='markers', name='predictions'),
         row=1, col=1
     )
 
@@ -205,37 +203,7 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
     )
 
     # Write the plot to an HTML file
-    fig.write_html(model_path / "prob_delta_times.html")
-
-    event_types_length = concatenated_label_event_type.shape[1] # event_types length
-    event_types_probs = np.exp(concatenated_label_event_type[ar_index,:])
-
-
-    # Define class labels
-    class_labels = [f"Event type {i}" for i in range(event_types_length)]
-
-    # Create a figure
-    fig = go.Figure()
-
-    # Add traces for each set of probabilities
-    fig.add_trace(
-        go.Bar(
-            x=class_labels,
-            y=event_types_probs,
-            opacity=0.7
-        )
-    )
-    # Update layout for better aesthetics
-    fig.update_layout(
-        title="Probability Distribution Across Classes",
-        xaxis_title="Class Number",
-        yaxis_title="Probability",
-        barmode='group',  # Options: 'group', 'overlay', 'stack'
-        template='plotly_white',
-        legend_title="Probability Sets",
-        xaxis_tickangle=-45
-    )
-    fig.write_html(model_path / "prob_event_types.html")
+    fig.write_html(model_path / "pred_sample_dtimes.html")
 
 def transform_list(input_list, max_period):
     # Initialize an empty list to store the transformed values
@@ -395,9 +363,9 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     # Write the plot to an HTML file
     fig.write_html(model_path / "prob_delta_times.html")
 
-    event_types_length = concatenated_label_event_type.shape[1] # event_types length
-    event_types_probs = np.exp(concatenated_label_event_type[ar_index,:])
-
+    # (951, 999, 15)
+    event_types_length = concatenated_label_event_type.shape[2] # event_types length
+    event_types_probs = np.exp(concatenated_label_event_type[ar_index,0,:]) #FIXME why index 0?
 
     # Define class labels
     class_labels = [f"Event type {i}" for i in range(event_types_length)]
@@ -424,96 +392,3 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
         xaxis_tickangle=-45
     )
     fig.write_html(model_path / "prob_event_types.html")
-
-    # Optionally, adjust y-axis to range [0, 1] if dealing with probabilities
-    #fig.update_yaxes(range=[0, 1])
-    # calculate the rmse of dtime
-    #concatenated_label_dtime = np.concatenate(data['label'], axis=1)
-    #label_dtime = concatenated_label_dtime[1, :, -1]
-    #concatenated_pred_dtime_mean = np.concatenate(data['dtime_mean_pred'], axis=0)
-    #pred_dtime = concatenated_pred_dtime_mean[:, 0]
-    #rmse = np.sqrt(np.mean((pred_dtime - label_dtime) ** 2))
-    #logger.info(f"RMSE: {rmse}")
-
-    # calculate the average loglikelihood
-    #loglikelihood = np.array(data['loglikelihood']).sum()/len(pred_dtime)
-    #logger.info(f"loglikelihood: {loglikelihood}")
-
-
-def plot_probability_predictions_2D(dataset_config, generation_output_config, data, model_path, args):
-
-    # (num_batches, 2, num_steps*num_steps, batch_size, seq_len-2)
-    concatenated_label_dtime = np.concatenate(data['pred'], axis=2)[0,...]
-    # (num_steps*num_steps, batch_size, seq_len-2)
-    max_index = concatenated_label_dtime.shape[0]
-    ar_index = np.random.randint(0, max_index, size=1)
-    assert ar_index < max_index, f"Index out of range: {ar_index} > {max_index}"
-    dtime_logcdf_pred = concatenated_label_dtime[:,ar_index,-1]
-    joint_pdf_pred = np.exp(dtime_logcdf_pred)
-
-    prediction_config = generation_output_config['prediction_config']
-    sample_dtime_min = prediction_config['probability_generation']['sample_dtime_min']
-    sample_dtime_max = prediction_config['probability_generation']['sample_dtime_max']
-    num_steps_dtime = prediction_config['probability_generation']['num_steps_dtime']
-    sample_event_type_min = prediction_config['probability_generation']['sample_event_type_min']
-    sample_event_type_max = prediction_config['probability_generation']['sample_event_type_max']
-    num_steps_event_type = prediction_config['probability_generation']['num_steps_event_type']
-    # dtime samples, for all batches and position in seq is the same
-    # Step 1: Create 1D arrays for time_since_last_event and event_types
-    time_since_last_event = np.linspace(sample_dtime_min, sample_dtime_max, num_steps_dtime)
-    event_types = np.linspace(sample_event_type_min, sample_event_type_max, num_steps_event_type)
-
-    # Step 2: Generate a 2D meshgrid with 'ij' indexing to match PyTorch's behavior
-    time_grid, event_grid = np.meshgrid(time_since_last_event, event_types, indexing='ij')
-
-    # Step 3: Stack the grids along the last axis to create a grid of 2D samples
-    # Shape: (num_steps_dtime, num_steps_event_type, 2)
-    sample_grid = np.stack((time_grid, event_grid), axis=-1)
-
-    # Step 4: Reshape to [num_samples * num_samples, 2]
-    # where num_samples = num_steps_dtime * num_steps_event_type
-    dtime_samples = sample_grid.reshape(-1, 2)
-
-    
-    # Create a scatter plot using plotly
-    # Create a 3D surface plot with Plotly
-    grid_size = int(np.sqrt(joint_pdf_pred.shape[0]))
-    # cap values of joint_pdf_pred to 2
-    joint_pdf_pred[joint_pdf_pred > 2] = 2
-    # plot
-    Z = joint_pdf_pred.reshape(grid_size, grid_size)  # Probability values
-    X = dtime_samples[:, 0].reshape(grid_size, grid_size)  # X-axis (inter_times)
-    Y = dtime_samples[:, 1].reshape(grid_size, grid_size)  # Y-axis (event_types)
-    fig = go.Figure(data=[go.Surface(z=Z, x=X, y=Y)])
-    fig.update_layout(
-        title="3D Probability Density Plot",
-        scene=dict(
-            xaxis_title="Inter Times (X)",
-            yaxis_title="Event Types (Y)",
-            zaxis_title="Probability (Z)"
-        )
-    )
-    fig.update_layout(title='Predictions', xaxis_title='Time', yaxis_title='Probability')
-    #fig.update_layout(scene_zaxis_range=[0, 2]) # limit z axis
-    fig.write_html(model_path / "prob_joint_3d.html")
-    
-    
-
-    # calculate the rmse of dtime
-    #concatenated_label_dtime = np.concatenate(data['label'], axis=1)
-    #label_dtime = concatenated_label_dtime[1, :, -1]
-    #concatenated_pred_dtime_mean = np.concatenate(data['dtime_mean_pred'], axis=0)
-    #pred_dtime = concatenated_pred_dtime_mean[:, 0]
-    #rmse = np.sqrt(np.mean((pred_dtime - label_dtime) ** 2))
-    #logger.info(f"dtime RMSE: {rmse}")
-
-    # calculate the rmse of event types
-    #label_event_types = concatenated_label_dtime[2, :, -1]
-    #concatenated_pred_type_mean = np.concatenate(data['type_mean_pred'], axis=0)
-    #pred_type = concatenated_pred_type_mean[:, 0]
-    #rmse = np.sqrt(np.mean((pred_type - label_event_types) ** 2))
-    #logger.info(f"type RMSE: {rmse}")
-
-    # calculate the average loglikelihood (over the batches)
-    #loglikelihood = np.array(data['loglikelihood']).sum()/len(data['loglikelihood'])
-    #logger.info(f"loglikelihood: {loglikelihood}")
