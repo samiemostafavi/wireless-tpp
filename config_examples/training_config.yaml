@@ -1,0 +1,139 @@
+pipeline_config_id: runner_config
+
+data:
+  s63_scheduling_0:
+    data_format: json
+    train_dir:  ./data/s63_results/scheduling/datasets/test0/train.pkl
+    valid_dir:  ./data/s63_results/scheduling/datasets/test0/dev.pkl
+    test_dir:  ./data/s63_results/scheduling/datasets/test0/test.pkl
+    data_specs:
+      num_event_types: 6 # max number of segments + 1
+      pad_token_id: 6
+      padding_strategy: do_not_pad
+
+  s63_linkquality_0:
+    data_format: json
+    train_dir:  ./data/s63_results/link_quality/datasets/test0/train.pkl
+    valid_dir:  ./data/s63_results/link_quality/datasets/test0/dev.pkl
+    test_dir:  ./data/s63_results/link_quality/datasets/test0/test.pkl
+    data_specs:
+      includes_mcs: false
+      mcs_events: true
+      min_mcs: 11
+      num_event_types: 15
+      num_event_types_no_mcs: 8
+      pad_token_id: 15
+      padding_side: right
+      truncation_side: right
+
+  s63_packetarrival_0:
+    data_format: pkl
+    train_dir: ./data/s63_results/packet_arrival/datasets/test0/train.pkl
+    valid_dir: ./data/s63_results/packet_arrival/datasets/test0/dev.pkl
+    test_dir: ./data/s63_results/packet_arrival/datasets/test0/test.pkl
+    data_specs:
+      num_event_types: 3 # max number of segments + 1
+      pad_token_id: 3
+      padding_strategy: do_not_pad
+
+
+IF_train_s63_scheduling_0:
+  base_config:
+    stage: train
+    backend: torch
+    dataset_id: s63_scheduling_0
+    runner_id: std_tpp
+    model_id: IntensityFreeScheduling
+    base_dir: './data/s63_results/scheduling/trained_models/test0/'
+  trainer_config:
+    batch_size: 16
+    max_epoch: 500
+    shuffle: False
+    optimizer: adam
+    learning_rate: 1.e-3
+    valid_freq: 5
+    use_tfb: False
+    metrics: [ 'acc', 'rmse' ]
+    seed: 2019
+    gpu: 0
+  model_config:
+    hidden_size: 16
+    num_layers: 1
+    num_heads: 2
+    mc_num_sample_per_step: 20
+    loss_integral_num_sample_per_step: 20
+    use_ln: False
+    dropout_rate: 0.2
+    model_specs:
+      prior: false
+      num_mix_components: 1
+      include_mcs: False
+      include_mretx: False
+      include_rfailed: False
+      include_len: False
+
+
+THP_train_s63_linkquality_0:
+  base_config:
+    stage: train
+    backend: torch
+    dataset_id: s63_linkquality_0
+    runner_id: std_tpp
+    model_id: THPLinkQuality
+    base_dir: './data/s63_results/link_quality/trained_models/test0/'
+  trainer_config:
+    batch_size: 1024
+    max_epoch: 400
+    shuffle: False
+    optimizer: adam
+    learning_rate: 1.e-3
+    valid_freq: 5
+    use_tfb: False
+    metrics: [ 'acc', 'rmse' ]
+    seed: 2019
+    gpu: 0
+  model_config:
+    hidden_size: 256
+    time_emb_size: 16
+    num_layers: 2
+    num_heads: 2
+    mc_num_sample_per_step: 20
+    loss_integral_num_sample_per_step: 20
+    use_ln: False
+    model_specs:
+      prior: false
+      filter_mcs_events_for_loss: true
+      includes_mcs: false
+
+
+IF_train_s63_packetarrival_0:
+  base_config:
+    stage: train
+    backend: torch
+    dataset_id: s63_packetarrival_0
+    runner_id: std_tpp
+    model_id: IntensityFreePacketArrival
+    base_dir: './data/s63_results/packet_arrival/trained_models/test0/'
+  trainer_config:
+    batch_size: 64
+    max_epoch: 800
+    shuffle: False
+    optimizer: adam
+    learning_rate: 1.e-4
+    valid_freq: 10
+    use_tfb: False
+    metrics: [ 'acc', 'rmse' ]
+    seed: 2019
+    gpu: 0
+  model_config:
+    hidden_size: 64
+    time_emb_size: 16
+    num_layers: 1
+    num_heads: 2
+    mc_num_sample_per_step: 20
+    loss_integral_num_sample_per_step: 20
+    use_ln: False
+    dropout_rate: 0.2
+    model_specs:
+      num_mix_components: 16
+      prior: false
