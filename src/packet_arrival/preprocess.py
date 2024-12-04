@@ -1,5 +1,6 @@
 import os, sys, json, random, pickle
 import plotly.graph_objects as go
+import plotly.express as px
 import numpy as np
 from pathlib import Path
 from loguru import logger
@@ -16,7 +17,7 @@ def plot_data(args):
     # read configuration from args.config
     with open(args.config, 'r') as f:
         config = json.load(f)
-    config = config[args.configname]
+    dataset_config = config[args.configname]
     
     # read experiment configuration
     folder_addr = Path(args.source)
@@ -31,12 +32,58 @@ def plot_data(args):
     with open(folder_addr / 'experiment_config.json', 'r') as f:
         exp_config = json.load(f)
 
-    time_masks = config['time_masks']
-    filter_packet_sizes = config['filter_packet_sizes']
-    window_config = config['window_config']
-    dataset_size_max = config['dataset_size_max']
-    split_ratios = config['split_ratios']
-    dtime_max = config['dtime_max']
+    # prepare the results folder
+    results_folder_addr = folder_addr / 'packet_arrival' / 'pre_plots' / args.name
+    results_folder_addr.mkdir(parents=True, exist_ok=True)
+    with open(results_folder_addr / 'config.json', 'w') as f:
+        json_obj = json.dumps(config, indent=4)
+        f.write(json_obj)
+
+    dtime_max = dataset_config['dtime_max']
+    filter_packet_sizes = dataset_config['filter_packet_sizes']
+
+    time_bounds = []
+    db_id = 0
+    for result_database_file, time_mask in zip(result_database_files, dataset_config['time_masks']):
+        pacekt_analyzer = ULPacketAnalyzer(result_database_file)
+        experiment_length_ts = pacekt_analyzer.last_ueip_ts - pacekt_analyzer.first_ueip_ts
+        begin_ts = pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
+        end_ts = pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
+        time_bounds.append((begin_ts, end_ts))
+        logger.info(f"Database {db_id}, experiment duration: {(experiment_length_ts)} seconds")
+        logger.info(f"Database {db_id}, filtering packets from {begin_ts} to {end_ts}, length: {end_ts-begin_ts} seconds")
+        db_id += 1
+
+    packet_size_arr, packet_inp_ts_arr, frame_strt_ts_arr, slot_num_arr, delta_times_ms = \
+        extract_packet_arrivals_for_plot(result_database_files, time_bounds, filter_packet_sizes, exp_config)
+
+    # Plot probability distribution of delta times
+    # Create a histogram plot of the delta times
+    fig = px.histogram(x=delta_times_ms, nbins=100, title='Probability Distribution of Delta Times', histnorm='probability')
+    fig.update_layout(xaxis_range=[0, dtime_max])
+    fig.update_layout(xaxis_title='Delta Time (ms)', yaxis_title='Probability')
+    fig.write_html(str(results_folder_addr / 'delta_times.html'))
+
+    # Plot timeseries of slot numbers against packet_inp_ts
+    fig1 = go.Figure()
+    fig1.add_trace(go.Scatter(x=packet_inp_ts_arr, y=slot_num_arr, mode='markers', name='Slot Numbers'))
+    fig1.add_trace(go.Scatter(x=frame_strt_ts_arr, y=np.ones(len(frame_strt_ts_arr)), mode='markers', name='Frame Start'))
+    fig1.update_layout(title='Timeseries of packet arrival events', xaxis_title='Time', yaxis_title='Slot Number')
+    fig1.write_html(str(results_folder_addr / 'slot_numbers.html'))
+
+    # Plot timeseries of (packet_inp_ts-framest_ts_arr)*1000 against packet_inp_ts
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=packet_inp_ts_arr, y=(np.array(packet_inp_ts_arr)-np.array(frame_strt_ts_arr))*1000, mode='markers', name='Time Difference'))
+    fig2.update_layout(title='Timeseries of (packet_inp_ts-framest_ts_arr)*1000', xaxis_title='Packet Input Time', yaxis_title='Time Difference (ms)')
+    fig2.write_html(str(results_folder_addr / 'time_difference.html'))
+
+    # Plot timeseries of packet_size_arr
+    fig3 = go.Figure()
+    fig3.add_trace(go.Scatter(x=packet_inp_ts_arr, y=packet_size_arr, mode='markers', name='Packet Sizes'))
+    fig3.update_layout(title='Timeseries of packet sizes', xaxis_title='Packet Input Time', yaxis_title='Packet Sizes (bytes)')
+    fig3.write_html(str(results_folder_addr / 'packet_sizes.html'))
+
+def extract_packet_arrivals_for_plot(result_database_files, time_bounds, filter_packet_sizes, exp_config):
     
     slots_duration_ms = exp_config['slots_duration_ms']
     num_slots_per_frame = exp_config['slots_per_frame']
@@ -46,19 +93,13 @@ def plot_data(args):
     max_num_frames = exp_config['max_num_frames']
     scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
 
-    # prepare the results folder
-    results_folder_addr = folder_addr / 'packet_arrival' / 'pre_plots' / args.name
-    results_folder_addr.mkdir(parents=True, exist_ok=True)
-    with open(results_folder_addr / 'config.json', 'w') as f:
-        json_obj = json.dumps(config, indent=4)
-        f.write(json_obj)
-
     packet_size_arr, packet_inp_ts_arr, frame_strt_ts_arr, slot_num_arr, delta_times_ms = np.array([]), np.array([]), np.array([]), np.array([]), np.array([])
 
     prev_end_ts = 0
-    for result_database_file, time_mask in zip(result_database_files, time_masks):
-
-        # initiate analyzers
+    db_id = 0
+    for result_database_file, time_bound in zip(result_database_files, time_bounds):
+        begin_ts = time_bound[0]
+        end_ts = time_bound[1]
         pacekt_analyzer = ULPacketAnalyzer(result_database_file)
         scheduling_analyzer = ULSchedulingAnalyzer(
             total_prbs_num = total_prbs_num, 
@@ -69,13 +110,8 @@ def plot_data(args):
             max_num_frames = max_num_frames,
             db_addr = result_database_file
         )
-        end_ts = pacekt_analyzer.last_ueip_ts
-        begin_ts = pacekt_analyzer.first_ueip_ts
-        experiment_length_ts = pacekt_analyzer.last_ueip_ts - pacekt_analyzer.first_ueip_ts
-        logger.info(f"Experiment duration: {(experiment_length_ts)} seconds")
-        logger.info(f"Filtering packets from {pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]} to {pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]}, length: {experiment_length_ts*time_mask[1]-experiment_length_ts*time_mask[0]} seconds")
-        packets = pacekt_analyzer.figure_packet_arrivals_from_ts(pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0], pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1])
-        logger.info(f"Number of packets for this duration: {len(packets)}")
+        packets = pacekt_analyzer.figure_packet_arrivals_from_ts(begin_ts, end_ts)
+        logger.info(f"Database id: {db_id}, number of packets for this duration: {len(packets)}")
 
         # sort the packets in case they are not sorted
         packets = sorted(packets, key=lambda x: x['ip.in.timestamp'], reverse=False)
@@ -109,41 +145,16 @@ def plot_data(args):
         slot_num_arr = np.concatenate((slot_num_arr, np.array(slot_num_arr_this_db)))
         delta_times_ms = np.concatenate((delta_times_ms, np.array(delta_times_ms_this_db)))
         prev_end_ts = (end_ts-begin_ts) + prev_end_ts
+        db_id += 1
 
-    # Plot probability distribution of delta times
-    import plotly.express as px
-    # Create a histogram plot of the delta times
-    fig = px.histogram(x=delta_times_ms, nbins=100, title='Probability Distribution of Delta Times', histnorm='probability')
-    fig.update_layout(xaxis_range=[0, dtime_max])
-    fig.update_layout(xaxis_title='Delta Time (ms)', yaxis_title='Probability')
-    fig.write_html(str(results_folder_addr / 'delta_times.html'))
-
-    # Plot timeseries of slot numbers against packet_inp_ts
-    fig1 = go.Figure()
-    fig1.add_trace(go.Scatter(x=packet_inp_ts_arr, y=slot_num_arr, mode='markers', name='Slot Numbers'))
-    fig1.add_trace(go.Scatter(x=frame_strt_ts_arr, y=np.ones(len(frame_strt_ts_arr)), mode='markers', name='Frame Start'))
-    fig1.update_layout(title='Timeseries of packet arrival events', xaxis_title='Time', yaxis_title='Slot Number')
-    fig1.write_html(str(results_folder_addr / 'slot_numbers.html'))
-
-    # Plot timeseries of (packet_inp_ts-framest_ts_arr)*1000 against packet_inp_ts
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=packet_inp_ts_arr, y=(np.array(packet_inp_ts_arr)-np.array(frame_strt_ts_arr))*1000, mode='markers', name='Time Difference'))
-    fig2.update_layout(title='Timeseries of (packet_inp_ts-framest_ts_arr)*1000', xaxis_title='Packet Input Time', yaxis_title='Time Difference (ms)')
-    fig2.write_html(str(results_folder_addr / 'time_difference.html'))
-
-    # Plot timeseries of packet_size_arr
-    fig3 = go.Figure()
-    fig3.add_trace(go.Scatter(x=packet_inp_ts_arr, y=packet_size_arr, mode='markers', name='Packet Sizes'))
-    fig3.update_layout(title='Timeseries of packet sizes', xaxis_title='Packet Input Time', yaxis_title='Packet Sizes (bytes)')
-    fig3.write_html(str(results_folder_addr / 'packet_sizes.html'))
-
+    return packet_size_arr, packet_inp_ts_arr, frame_strt_ts_arr, slot_num_arr, delta_times_ms
     
 def create_training_dataset(args):
 
     # read configuration from args.config
     with open(args.config, 'r') as f:
-        config = json.load(f)
-    config = config[args.configname]
+        dataset_config = json.load(f)
+    dataset_config = dataset_config[args.configname]
 
     # read experiment configuration
     folder_addr = Path(args.source)
@@ -158,43 +169,32 @@ def create_training_dataset(args):
     with open(folder_addr / 'experiment_config.json', 'r') as f:
         exp_config = json.load(f)
 
-    time_masks = config['time_masks']
-    filter_packet_sizes = config['filter_packet_sizes']
-    window_config = config['window_config']
-    dataset_size_max = config['dataset_size_max']
-    split_ratios = config['split_ratios']
-    dtime_max = config['dtime_max']
-
-    slots_duration_ms = exp_config['slots_duration_ms']
-    num_slots_per_frame = exp_config['slots_per_frame']
-    total_prbs_num = exp_config['total_prbs_num']
-    symbols_per_slot = exp_config['symbols_per_slot']
-    scheduling_map_num_integers = exp_config['scheduling_map_num_integers']
-    max_num_frames = exp_config['max_num_frames']
-    scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
-
-    # Save configuration dictionary to a json file
-    results_folder_addr = folder_addr / 'packet_arrival'  / 'datasets' / args.name
-    results_folder_addr.mkdir(parents=True, exist_ok=True)
-    with open(results_folder_addr / 'config.json', 'w') as f:
-        json_obj = json.dumps(config, indent=4)
-        f.write(json_obj)
-
-
+    time_masks = dataset_config['time_masks']
+    filter_packet_sizes = dataset_config['filter_packet_sizes']
+    window_config = dataset_config['window_config']
     history_window_size = window_config['size']
+    dataset_size_max = dataset_config['dataset_size_max']
+    split_ratios = dataset_config['split_ratios']
+    dtime_max = dataset_config['dtime_max']
 
     # figure out the unique packet sizes in all databases
     packet_sizes_set = set()
+    time_bounds = []
+    db_id = 0
     for result_database_file, time_mask in zip(result_database_files, time_masks):
         pacekt_analyzer = ULPacketAnalyzer(result_database_file)
-        end_ts = pacekt_analyzer.last_ueip_ts
-        begin_ts = pacekt_analyzer.first_ueip_ts
-        experiment_length_ts = end_ts - begin_ts
-        packets = pacekt_analyzer.figure_packet_arrivals_from_ts(begin_ts+experiment_length_ts*time_mask[0], begin_ts+experiment_length_ts*time_mask[1])
+        experiment_length_ts = pacekt_analyzer.last_ueip_ts - pacekt_analyzer.first_ueip_ts
+        begin_ts = pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
+        end_ts = pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
+        logger.info(f"Database id: {db_id}, experiment duration: {(experiment_length_ts)} seconds")
+        logger.info(f"Database id: {db_id}, filtering packets from {begin_ts} to {end_ts}, length: {end_ts-begin_ts} seconds")
+        time_bounds.append((begin_ts, end_ts))
+        packets = pacekt_analyzer.figure_packet_arrivals_from_ts(begin_ts, end_ts)
         for packet in packets:
             if len(filter_packet_sizes) > 0 and packet['ip.in.length'] not in filter_packet_sizes:
                 continue
             packet_sizes_set.add(int(packet['ip.in.length']))
+        db_id += 1
     dim_process = len(list(packet_sizes_set))
     logger.info(f"Number of unique packet sizes and dim_process: {dim_process}")
     # sort packet_sizes_set and make a dict to map packet sizes to integers
@@ -202,63 +202,23 @@ def create_training_dataset(args):
     psize_eventtype_mapping = {packet_size: idx for idx, packet_size in enumerate(packet_sizes_sorted_list)}
     logger.info(f"Packet sizes dict: {psize_eventtype_mapping}")
 
+    dataset_config = {
+        'dim_process' : dim_process,
+        'psize_eventtype_mapping' : psize_eventtype_mapping,
+        **dataset_config
+    }
+
+    # Save configuration dictionary to a json file
+    results_folder_addr = folder_addr / 'packet_arrival'  / 'datasets' / args.name
+    results_folder_addr.mkdir(parents=True, exist_ok=True)
+    with open(results_folder_addr / 'config.json', 'w') as f:
+        json_obj = json.dumps(dataset_config, indent=4)
+        f.write(json_obj)
+
+    packet_arrival_events_arr = extract_packet_arrival_events(result_database_files, time_bounds, psize_eventtype_mapping, filter_packet_sizes, exp_config, dtime_max)
+
     dataset = []
-    for result_database_file, time_mask in zip(result_database_files, time_masks):
-        # initiate analyzers
-        pacekt_analyzer = ULPacketAnalyzer(result_database_file)
-        scheduling_analyzer = ULSchedulingAnalyzer(
-            total_prbs_num = total_prbs_num, 
-            symbols_per_slot = symbols_per_slot,
-            slots_per_frame = num_slots_per_frame, 
-            slots_duration_ms = slots_duration_ms, 
-            scheduling_map_num_integers = scheduling_map_num_integers,
-            max_num_frames = max_num_frames,
-            db_addr = result_database_file
-        )
-        end_ts = pacekt_analyzer.last_ueip_ts
-        begin_ts = pacekt_analyzer.first_ueip_ts
-        experiment_length_ts = end_ts - begin_ts
-        logger.info(f"Experiment duration: {(experiment_length_ts)} seconds")
-        logger.info(f"Filtering packets from {begin_ts+experiment_length_ts*time_mask[0]} to {begin_ts+experiment_length_ts*time_mask[1]}, length: {experiment_length_ts*time_mask[1]-experiment_length_ts*time_mask[0]} seconds")
-        packets = pacekt_analyzer.figure_packet_arrivals_from_ts(begin_ts+experiment_length_ts*time_mask[0], begin_ts+experiment_length_ts*time_mask[1])
-        logger.info(f"Number of packets for this duration: {len(packets)}")
-
-        # sort the packets in case they are not sorted
-        packets = sorted(packets, key=lambda x: x['ip.in.timestamp'], reverse=False)
-
-        packet_arrival_events = []
-        last_event_ts = 0
-        for packet in packets:
-            if len(filter_packet_sizes) > 0 and packet['ip.in.length'] not in filter_packet_sizes:
-                continue
-            frame_start_ts, frame_num, slot_num = scheduling_analyzer.find_frame_slot_from_ts(
-                timestamp=packet['ip.in.timestamp'],
-                #SCHED_OFFSET_S=0.002 # 2ms which is 4*slot_duration_ms
-                #SCHED_OFFSET_S=0.004 # 4ms which is 8*slot_duration_ms
-                SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
-            )
-
-            time_since_frame0 = frame_num*num_slots_per_frame*slots_duration_ms + slot_num*slots_duration_ms
-            time_since_last_event = time_since_frame0-last_event_ts
-            #if time_since_last_event < 0:
-            #    time_since_last_event = time_since_frame0 + max_num_frames*num_slots_per_frame*slots_duration_ms
-            if time_since_last_event < 0:
-                time_since_last_event = time_since_frame0
-
-            last_event_ts = time_since_frame0
-
-            if time_since_last_event > dtime_max:
-                continue
-
-            packet_arrival_events.append(
-                {
-                    'type_event' : psize_eventtype_mapping[packet['ip.in.length']],
-                    'time_since_start' : time_since_frame0,
-                    'time_since_last_event' : time_since_last_event,
-                    'timestamp' : packet['ip.in.timestamp']
-                }
-            )
-        
+    for packet_arrival_events in packet_arrival_events_arr:
         dataset_this_db = []
         for idx,_ in enumerate(packet_arrival_events):
             if idx+history_window_size >= len(packet_arrival_events):
@@ -322,3 +282,69 @@ def create_training_dataset(args):
     # Save the dictionary to a pickle file
     with open(results_folder_addr / 'test.pkl', 'wb') as f:
         pickle.dump(test_ds, f)
+
+def extract_packet_arrival_events(result_database_files, time_bounds, psize_eventtype_mapping, filter_packet_sizes, exp_config, dtime_max):
+
+    slots_duration_ms = exp_config['slots_duration_ms']
+    num_slots_per_frame = exp_config['slots_per_frame']
+    total_prbs_num = exp_config['total_prbs_num']
+    symbols_per_slot = exp_config['symbols_per_slot']
+    scheduling_map_num_integers = exp_config['scheduling_map_num_integers']
+    max_num_frames = exp_config['max_num_frames']
+    scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
+
+    packet_arrival_events_arr = []
+    for result_database_file, time_bound in zip(result_database_files, time_bounds):
+        # initiate analyzers
+        pacekt_analyzer = ULPacketAnalyzer(result_database_file)
+        scheduling_analyzer = ULSchedulingAnalyzer(
+            total_prbs_num = total_prbs_num, 
+            symbols_per_slot = symbols_per_slot,
+            slots_per_frame = num_slots_per_frame, 
+            slots_duration_ms = slots_duration_ms, 
+            scheduling_map_num_integers = scheduling_map_num_integers,
+            max_num_frames = max_num_frames,
+            db_addr = result_database_file
+        )
+        begin_ts = time_bound[0]
+        end_ts = time_bound[1]     
+        packets = pacekt_analyzer.figure_packet_arrivals_from_ts(begin_ts, end_ts)
+        logger.info(f"Number of packets for this duration: {len(packets)}")
+
+        # sort the packets in case they are not sorted
+        packets = sorted(packets, key=lambda x: x['ip.in.timestamp'], reverse=False)
+
+        packet_arrival_events = []
+        last_event_ts = 0
+        for packet in packets:
+            if len(filter_packet_sizes) > 0 and packet['ip.in.length'] not in filter_packet_sizes:
+                continue
+            frame_start_ts, frame_num, slot_num = scheduling_analyzer.find_frame_slot_from_ts(
+                timestamp=packet['ip.in.timestamp'],
+                #SCHED_OFFSET_S=0.002 # 2ms which is 4*slot_duration_ms
+                #SCHED_OFFSET_S=0.004 # 4ms which is 8*slot_duration_ms
+                SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
+            )
+
+            time_since_frame0 = frame_num*num_slots_per_frame*slots_duration_ms + slot_num*slots_duration_ms
+            time_since_last_event = time_since_frame0-last_event_ts
+            #if time_since_last_event < 0:
+            #    time_since_last_event = time_since_frame0 + max_num_frames*num_slots_per_frame*slots_duration_ms
+            if time_since_last_event < 0:
+                time_since_last_event = time_since_frame0
+
+            last_event_ts = time_since_frame0
+
+            if time_since_last_event > dtime_max:
+                continue
+
+            packet_arrival_events.append(
+                {
+                    'type_event' : psize_eventtype_mapping[packet['ip.in.length']],
+                    'time_since_start' : time_since_frame0,
+                    'time_since_last_event' : time_since_last_event,
+                    'timestamp' : packet['ip.in.timestamp']
+                }
+            )
+        packet_arrival_events_arr.append(packet_arrival_events)
+    return packet_arrival_events_arr

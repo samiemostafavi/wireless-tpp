@@ -79,19 +79,19 @@ python main.py -t preprocess_edaf -s data/s63_results
 
 Plot the processed data (packet_arrival)
 ```
-python main.py -t packet_arrival -u plot_data -s data/s63_results -c config/dataset_config.json -g s63 -n test0
+python main.py -t packet_arrival -u plot_data -s data/s63_results -c config/dataset_config.json -g s63_arrival -n test0
 ```
 
 Plot the processed data (link_quality)
 ```
-python main.py -t link_quality -u plot_data -s data/s63_results -c config/dataset_config.json -g s63 -n test0
-python main.py -t link_quality -u plot_data -f -s data/s63_results -c config/dataset_config.json -g s63 -n test0
+python main.py -t link_quality -u plot_data -s data/s63_results -c config/dataset_config.json -g s63_link_retx -n test0
+python main.py -t link_quality -u plot_data -f -s data/s63_results -c config/dataset_config.json -g s63_link_retx -n test0
 ```
 
 Plot the processed data (scheduling)
 ```
-python main.py -t scheduling -u plot_data -s data/s63_results -c config/dataset_config.json -g s63 -n test0
-python main.py -t scheduling -u plot_data -v -s data/s63_results -c config/dataset_config.json -g s63 -n test0
+python main.py -t scheduling -u plot_data -s data/s63_results -c config/dataset_config.json -g s63_scheduling -n test0
+python main.py -t scheduling -u plot_data -v -s data/s63_results -c config/dataset_config.json -g s63_scheduling -n test0
 ```
 
 Create the dataset (packet arrival)
@@ -159,7 +159,7 @@ python main.py -t link_quality -u plot_predictions -s data/s63_results -n test0 
 
 Validate retx link quality model (sampling)
 ```
-python main.py -t link_quality -u generate_predictions -s data/s63_results -p sampling -c config/prediction_config.json -g s63_linkquality -n test0 -i 1105474_140407072232064_241202-120400
+python main.py -t link_quality -u generate_predictions -s data/s63_results -p sampling -c config/prediction_config.json -g s63_linkquality -n test0 -i 1106489_139985643180672_241202-123840
 python main.py -t link_quality -u plot_predictions -s data/s63_results -n test0 -i 1122926_140662824829568_241203-102211
 ```
 
@@ -177,6 +177,20 @@ python main.py -t scheduling -u generate_predictions -s data/s63_results -p samp
 python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1126371_140091332403840_241203-121033 -m 1
 python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1126371_140091332403840_241203-121033 -m 2
 python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1126371_140091332403840_241203-121033 -m 3
+```
+
+### Step 4. Validate packet delay prediction
+
+Packet delay prediction algorithm:
+1) Predict next packet arrival time and size (use packet arrival model)
+2) Predict segment 1 scheduling time and number of resource blocks
+3) Predict retransmission probability and types for segment 1, and the departure time of it
+4) Repeat 2 and 3 for next segments until sum of departed segments sizes becomes greater than packet size
+
+Validate by expected values
+```
+python main.py -t e2e -u plot_data -s data/s63_results -p sampling -c config/e2e_config.json
+python main.py -t e2e -u generate_predictions -s data/s63_results -p sampling -c config/e2e_config.json
 ```
 
  

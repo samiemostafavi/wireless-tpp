@@ -356,26 +356,14 @@ class THPLinkQuality(TorchBaseModel):
         Returns:
             tuple: tensors of dtime and type prediction, [batch_size, seq_len].
         """
-        if self.includes_mcs:
-            time_seq_label, time_delta_seq_label, event_seq_label, mcs_seq_label, batch_non_pad_mask_label, type_mask_label = batch
-
-            if not forward:
-                time_seq = time_seq_label[:, :-1]
-                time_delta_seq = time_delta_seq_label[:, :-1]
-                event_seq = event_seq_label[:, :-1]
-                mcs_seq = mcs_seq_label[:, :-1]
-            else:
-                time_seq, time_delta_seq, event_seq, mcs_seq = time_seq_label, time_delta_seq_label, event_seq_label, mcs_seq_label
-
+        time_seq_label, time_delta_seq_label, event_seq_label, batch_non_pad_mask_label, type_mask_label = batch
+        
+        if not forward:
+            time_seq = time_seq_label[:, :-1]
+            time_delta_seq = time_delta_seq_label[:, :-1]
+            event_seq = event_seq_label[:, :-1]
         else:
-            time_seq_label, time_delta_seq_label, event_seq_label, batch_non_pad_mask_label, type_mask_label = batch
-            
-            if not forward:
-                time_seq = time_seq_label[:, :-1]
-                time_delta_seq = time_delta_seq_label[:, :-1]
-                event_seq = event_seq_label[:, :-1]
-            else:
-                time_seq, time_delta_seq, event_seq = time_seq_label, time_delta_seq_label, event_seq_label
+            time_seq, time_delta_seq, event_seq = time_seq_label, time_delta_seq_label, event_seq_label
         
 
         #if type(self).__name__ == 'IntensityFree':
@@ -441,6 +429,45 @@ class THPLinkQuality(TorchBaseModel):
 
         return (dtimes_logprob, types_probs_pred) , time_delta_seq_label, time_seq_label, event_seq_label
 
+    def generate_samples_one_step_since_last_event(self, batch, forward=False):
+
+        time_seq_label, time_delta_seq_label, event_seq_label, batch_non_pad_mask_label, type_mask_label = batch
+        time_seq = time_seq_label[:, :-1]
+        time_delta_seq = time_delta_seq_label[:, :-1]
+        event_seq = event_seq_label[:, :-1]
+        
+        # [batch_size, seq_len]
+        dtime_boundary = time_delta_seq + self.event_sampler.dtime_max
+
+        # [batch_size, 1, num_sample]
+        accepted_dtimes, weights = self.event_sampler.draw_next_time_one_step(time_seq,
+                                                        time_delta_seq,
+                                                        event_seq,
+                                                        dtime_boundary,
+                                                        self.compute_intensities_at_sample_times,
+                                                        compute_last_step_only=True)
+
+        # [batch_size, 1]
+        dtimes_pred = torch.sum(accepted_dtimes * weights, dim=-1)
+
+        # [batch_size, seq_len, 1, event_num]
+        intensities_at_times = self.compute_intensities_at_sample_times(time_seq,
+                                                                        time_delta_seq,
+                                                                        event_seq,
+                                                                        dtimes_pred[:, :, None],
+                                                                        max_steps=event_seq.size()[1])
+
+        # [batch_size, seq_len, event_num]
+        intensities_at_times = intensities_at_times.squeeze(dim=-2)
+
+        # [batch_size, seq_len]
+        types_pred = torch.argmax(intensities_at_times, dim=-1)
+
+        # [batch_size, 1]
+        types_pred_ = types_pred[:, -1:]
+        dtimes_pred_ = dtimes_pred[:, -1:]
+
+        return dtimes_pred_, types_pred_, time_delta_seq_label, event_seq_label
     
     def predict_one_step_at_every_event(self, batch):
         """One-step prediction for every event in the sequence.
@@ -495,46 +522,6 @@ class THPLinkQuality(TorchBaseModel):
         # [batch_size, seq_len]
         dtimes_pred = torch.sum(accepted_dtimes * weights, dim=-1)  # compute the expected next event time
         return dtimes_pred, types_pred
-
-    def generate_samples_one_step_since_last_event(self, batch, forward=False):
-
-        time_seq_label, time_delta_seq_label, event_seq_label, batch_non_pad_mask_label, type_mask_label = batch
-        time_seq = time_seq_label[:, :-1]
-        time_delta_seq = time_delta_seq_label[:, :-1]
-        event_seq = event_seq_label[:, :-1]
-        
-        # [batch_size, seq_len]
-        dtime_boundary = time_delta_seq + self.event_sampler.dtime_max
-
-        # [batch_size, 1, num_sample]
-        accepted_dtimes, weights = self.event_sampler.draw_next_time_one_step(time_seq,
-                                                        time_delta_seq,
-                                                        event_seq,
-                                                        dtime_boundary,
-                                                        self.compute_intensities_at_sample_times,
-                                                        compute_last_step_only=True)
-
-        # [batch_size, 1]
-        dtimes_pred = torch.sum(accepted_dtimes * weights, dim=-1)
-
-        # [batch_size, seq_len, 1, event_num]
-        intensities_at_times = self.compute_intensities_at_sample_times(time_seq,
-                                                                        time_delta_seq,
-                                                                        event_seq,
-                                                                        dtimes_pred[:, :, None],
-                                                                        max_steps=event_seq.size()[1])
-
-        # [batch_size, seq_len, event_num]
-        intensities_at_times = intensities_at_times.squeeze(dim=-2)
-
-        # [batch_size, seq_len]
-        types_pred = torch.argmax(intensities_at_times, dim=-1)
-
-        # [batch_size, 1]
-        types_pred_ = types_pred[:, -1:]
-        dtimes_pred_ = dtimes_pred[:, -1:]
-
-        return dtimes_pred_, types_pred_, time_seq_label, event_seq_label
 
     def predict_multi_step_since_last_event(self, batch, forward=False):
         """Multi-step prediction since last event in the sequence.

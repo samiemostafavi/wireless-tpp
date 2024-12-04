@@ -16,6 +16,7 @@ class TPPDataLoaderPacketArrival(BaseTPPDataLoader):
         self.data_config = data_config
         self.num_event_types = data_config.data_specs.num_event_types
         self.backend = backend
+        self.source_data = kwargs.get('source_data', None)
         self.kwargs = kwargs
 
     def build_input_from_pkl(self, source_dir: str, split: str):
@@ -69,13 +70,19 @@ class TPPDataLoaderPacketArrival(BaseTPPDataLoader):
         Returns:
             EasyTPP.DataLoader: the data loader for tpp data.
         """
-        data_dir = self.data_config.get_data_dir(split)
-        data_source_type = data_dir.split('.')[-1]
-
-        if data_source_type == 'pkl':
-            data = self.build_input_from_pkl(data_dir, split)
+        if self.source_data is not None:
+            time_seqs = [[x["time_since_start"] for x in seq] for seq in self.source_data]
+            type_seqs = [[x["type_event"] for x in seq] for seq in self.source_data]
+            time_delta_seqs = [[x["time_since_last_event"] for x in seq] for seq in self.source_data]
+            data = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs})
         else:
-            data = self.build_input_from_json(data_dir, split)
+            data_dir = self.data_config.get_data_dir(split)
+            data_source_type = data_dir.split('.')[-1]
+
+            if data_source_type == 'pkl':
+                data = self.build_input_from_pkl(data_dir, split)
+            else:
+                data = self.build_input_from_json(data_dir, split)
 
         dataset = TPPDatasetPacketArrival(data)
         tokenizer = EventTokenizer(self.data_config.data_specs)

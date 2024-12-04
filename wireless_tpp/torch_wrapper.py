@@ -315,26 +315,15 @@ class TorchModelWrapper:
         if phase is not RunnerPhase.PREDICT:
             return None
         
-        if self.model.includes_mcs:
-        # [batch_size, seq_len, num_samples_boundary, event_num]
-            dtime_pred_probs, event_type_pred_probs, label_dtime, label_time, label_type, label_mcs = self.model.predict_probabilities_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
-            dtime_pred_probs = dtime_pred_probs.detach().cpu().numpy()
-            event_type_pred_probs = event_type_pred_probs.detach().cpu().numpy()
-            label_time = label_time.detach().cpu().numpy()
-            label_dtime = label_dtime.detach().cpu().numpy()
-            label_type = label_type.detach().cpu().numpy()
-            label_mcs = label_mcs.detach().cpu().numpy()
-            return (dtime_pred_probs, event_type_pred_probs), (label_dtime, label_time, label_type, label_mcs)
-        else:
-            pred_probs, label_dtime, label_time, label_type = self.model.predict_probabilities_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
-            dtime_pred_probs = pred_probs[0]
-            event_type_pred_probs = pred_probs[1]
-            dtime_pred_probs = dtime_pred_probs.detach().cpu().numpy()
-            event_type_pred_probs = event_type_pred_probs.detach().cpu().numpy()
-            label_dtime = label_dtime.detach().cpu().numpy()
-            label_time = label_time.detach().cpu().numpy()
-            label_type = label_type.detach().cpu().numpy()
-            return (dtime_pred_probs, event_type_pred_probs), (label_dtime, label_time, label_type)
+        pred_probs, label_dtime, label_time, label_type = self.model.predict_probabilities_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
+        dtime_pred_probs = pred_probs[0]
+        event_type_pred_probs = pred_probs[1]
+        dtime_pred_probs = dtime_pred_probs.detach().cpu().numpy()
+        event_type_pred_probs = event_type_pred_probs.detach().cpu().numpy()
+        label_dtime = label_dtime.detach().cpu().numpy()
+        label_time = label_time.detach().cpu().numpy()
+        label_type = label_type.detach().cpu().numpy()
+        return (dtime_pred_probs, event_type_pred_probs), (label_dtime, label_time, label_type)
     
     def run_batch_sample_generation_link_quality(self, batch, phase):
         """Run one batch produce samples only for the last event in the sequence

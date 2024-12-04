@@ -1,10 +1,5 @@
 import argparse
-from src import preprocess_edaf, run_link_quality, run_packet_arrival, run_scheduling
-
-# python main.py -t preprocess -s data/240928_082545_results
-# python main.py -t plot_link_data -s data/240928_082545_results -c config/dataset_config.json -n test0
-# python main.py -t create_training_dataset -s data/240928_082545_results -c config/dataset_config.json -n test0
-# python main.py -t train_model -c config/training_config.yaml -i THP_train
+from src import preprocess_edaf, run_link_quality, run_packet_arrival, run_scheduling, run_e2e
 
 def main():
     parser = argparse.ArgumentParser(description="Task parser")
@@ -12,7 +7,8 @@ def main():
             "preprocess_edaf",
             "link_quality",
             "packet_arrival",
-            "scheduling"
+            "scheduling",
+            "e2e"
         ],
         required=True,
         help="Specify the task to run"
@@ -57,6 +53,8 @@ def main():
         run_packet_arrival(final_args)
     elif args.task == "scheduling":
         run_scheduling(final_args)
+    elif args.task == "e2e":
+        run_e2e(final_args)
     else:
         print("Invalid task specified")
         

@@ -31,17 +31,16 @@ class TPPRunnerScheduling():
 
         self.save_log()
 
-        skip_data_loader = kwargs.get('skip_data_loader', False)
-        if not skip_data_loader:
-            # build data reader
-            data_config = self.runner_config.data_config
-            backend = self.runner_config.base_config.backend
-            kwargs = self.runner_config.trainer_config.get_yaml_config()
-            self._data_loader = TPPDataLoaderScheduling(
-                data_config=data_config,
-                backend=backend,
-                **kwargs
-            )
+        # build data reader
+        data_config = self.runner_config.data_config
+        backend = self.runner_config.base_config.backend
+        kwargs = self.runner_config.trainer_config.get_yaml_config()
+        self._data_loader = TPPDataLoaderScheduling(
+            data_config=data_config,
+            backend=backend,
+            source_data=None,
+            **kwargs
+        )
 
         # needed for transformation of the data
         mean_inter_time, std_inter_time, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
@@ -244,6 +243,22 @@ class TPPRunnerScheduling():
         Returns:
             EasyTPP.BaseModel, dict: the results of the process.
         """
+        source_data = kwargs.get('source_data', None)
+        if source_data is not None:
+            data_config = self.runner_config.data_config
+            backend = self.runner_config.base_config.backend
+            # {'seed': 2019, 'gpu': -1, 'batch_size': 1, 'max_epoch': 800, 'shuffle': False, 'optimizer': 'adam', 'learning_rate': 0.0001, 'valid_freq': 10, 'use_tfb': False, 'metrics': ['acc', 'rmse']}
+            kwargs_train = self.runner_config.trainer_config.get_yaml_config()
+            batch_size = kwargs.get('batch_size', None)
+            if batch_size is not None:
+                kwargs_train['batch_size'] = batch_size
+            self._data_loader = TPPDataLoaderScheduling(
+                data_config=data_config,
+                backend=backend,
+                source_data=source_data,
+                **kwargs_train
+            )
+
         current_stage = get_stage(self.runner_config.base_config.stage)
         if current_stage == RunnerPhase.TRAIN:
             return self.train(**kwargs)
@@ -341,12 +356,15 @@ class TPPRunnerScheduling():
             test_result = self.run_one_epoch_probability_generation(data_loader, RunnerPhase.PREDICT)
         else:
             test_result = self.run_one_epoch_sample_generation(data_loader, RunnerPhase.PREDICT)
-            
-        # save it to a pkl file
-        model_dir = self.runner_config.base_config.specs['log_folder']
-        logger.critical(f'Save prediction results to {Path(model_dir) / "pred.pkl"}')
-        save_pickle(Path(model_dir) / 'pred.pkl', test_result)
-        return
+        
+        if kwargs.get('return_predictions', False):
+            return test_result
+        else:
+            # save it to a pkl file
+            model_dir = self.runner_config.base_config.specs['log_folder']
+            logger.critical(f'Save prediction results to {Path(model_dir) / "pred.pkl"}')
+            save_pickle(Path(model_dir) / 'pred.pkl', test_result)
+            return
 
     def run_one_epoch(self, data_loader, phase):
         """Run one complete epoch.

@@ -31,66 +31,40 @@ class TPPRunnerLinkQuality():
 
         self.save_log()
 
-        skip_data_loader = kwargs.get('skip_data_loader', False)
-        if not skip_data_loader:
-            # build data reader
-            data_config = self.runner_config.data_config
-            backend = self.runner_config.base_config.backend
-            kwargs = self.runner_config.trainer_config.get_yaml_config()
-            self._data_loader = TPPDataLoaderLinkQuality(
-                data_config=data_config,
-                backend=backend,
-                **kwargs
-            )
+        # build data reader
+        # source_data=None to find the transform from original data
+        data_config = self.runner_config.data_config
+        backend = self.runner_config.base_config.backend
+        kwargs = self.runner_config.trainer_config.get_yaml_config()
+        self._data_loader = TPPDataLoaderLinkQuality(
+            data_config=data_config,
+            backend=backend,
+            source_data=None,
+            **kwargs
+        )
 
         # needed for transformation of the data
-        if data_config.data_specs.includes_mcs:
-            mean_inter_time, std_inter_time, mean_event_type, std_event_type, mean_mcs, std_mcs, min_dt, max_dt, min_eventtype, max_eventtype, min_mcs, max_mcs = (
-                self._data_loader.train_loader().dataset.get_dt_stats(includes_mcs=data_config.data_specs.includes_mcs)
-            )
-            runner_config.model_config.set("mean_inter_time", mean_inter_time)
-            runner_config.model_config.set("std_inter_time", std_inter_time)
-            runner_config.model_config.set("mean_log_inter_time", np.log(mean_inter_time+self.eps))
-            runner_config.model_config.set("std_log_inter_time", np.log(std_inter_time+self.eps))
-            runner_config.model_config.set("mean_event_type", mean_event_type)
-            runner_config.model_config.set("std_event_type", std_event_type)
-            runner_config.model_config.set("mean_mcs", mean_mcs)
-            runner_config.model_config.set("std_mcs", std_mcs)
-            runner_config.model_config.set("mean_log_event_type", np.log(mean_event_type+self.eps))
-            runner_config.model_config.set("std_log_event_type", np.log(std_event_type+self.eps))
-        elif data_config.data_specs.mcs_events:
-            mean_inter_time, std_inter_time, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype, mcs_mean_inter_time, mcs_std_inter_time, mcs_mean_event_type, mcs_std_event_type, mcs_min_dt, mcs_max_dt, mcs_min_eventtype, mcs_max_eventtype, = (
-                self._data_loader.train_loader().dataset.get_dt_stats(mcs_events=data_config.data_specs.mcs_events, num_event_types_no_mcs=data_config.data_specs.num_event_types_no_mcs)
-            )
-            runner_config.model_config.set("mean_inter_time", mean_inter_time)
-            runner_config.model_config.set("std_inter_time", std_inter_time)
-            runner_config.model_config.set("mean_log_inter_time", np.log(mean_inter_time+self.eps))
-            runner_config.model_config.set("std_log_inter_time", np.log(std_inter_time+self.eps))
-            runner_config.model_config.set("mean_event_type", mean_event_type)
-            runner_config.model_config.set("std_event_type", std_event_type)
-            runner_config.model_config.set("mean_log_event_type", np.log(mean_event_type+self.eps))
-            runner_config.model_config.set("std_log_event_type", np.log(std_event_type+self.eps))
-            runner_config.model_config.set("mcs_mean_inter_time", mcs_mean_inter_time)
-            runner_config.model_config.set("mcs_std_inter_time", mcs_std_inter_time)
-            runner_config.model_config.set("mcs_mean_log_inter_time", np.log(mcs_mean_inter_time+self.eps))
-            runner_config.model_config.set("mcs_std_log_inter_time", np.log(mcs_std_inter_time+self.eps))
-            runner_config.model_config.set("mcs_mean_event_type", mcs_mean_event_type)
-            runner_config.model_config.set("mcs_std_event_type", mcs_std_event_type)
-            runner_config.model_config.set("mcs_mean_log_event_type", np.log(mcs_mean_event_type+self.eps))
-            runner_config.model_config.set("mcs_std_log_event_type", np.log(mcs_std_event_type+self.eps))
-            runner_config.model_config.set("num_event_types_no_mcs", data_config.data_specs.num_event_types_no_mcs)
-        else:
-            mean_inter_time, std_inter_time, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
-                self._data_loader.train_loader().dataset.get_dt_stats()
-            )
-            runner_config.model_config.set("mean_inter_time", mean_inter_time)
-            runner_config.model_config.set("std_inter_time", std_inter_time)
-            runner_config.model_config.set("mean_log_inter_time", np.log(mean_inter_time+self.eps))
-            runner_config.model_config.set("std_log_inter_time", np.log(std_inter_time+self.eps))
-            runner_config.model_config.set("mean_event_type", mean_event_type)
-            runner_config.model_config.set("std_event_type", std_event_type)
-            runner_config.model_config.set("mean_log_event_type", np.log(mean_event_type+self.eps))
-            runner_config.model_config.set("std_log_event_type", np.log(std_event_type+self.eps))
+        mean_inter_time, std_inter_time, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype, mcs_mean_inter_time, mcs_std_inter_time, mcs_mean_event_type, mcs_std_event_type, mcs_min_dt, mcs_max_dt, mcs_min_eventtype, mcs_max_eventtype, = (
+            self._data_loader.train_loader().dataset.get_dt_stats(mcs_events=data_config.data_specs.mcs_events, num_event_types_no_mcs=data_config.data_specs.num_event_types_no_mcs)
+        )
+        runner_config.model_config.set("mean_inter_time", mean_inter_time)
+        runner_config.model_config.set("std_inter_time", std_inter_time)
+        runner_config.model_config.set("mean_log_inter_time", np.log(mean_inter_time+self.eps))
+        runner_config.model_config.set("std_log_inter_time", np.log(std_inter_time+self.eps))
+        runner_config.model_config.set("mean_event_type", mean_event_type)
+        runner_config.model_config.set("std_event_type", std_event_type)
+        runner_config.model_config.set("mean_log_event_type", np.log(mean_event_type+self.eps))
+        runner_config.model_config.set("std_log_event_type", np.log(std_event_type+self.eps))
+        runner_config.model_config.set("mcs_mean_inter_time", mcs_mean_inter_time)
+        runner_config.model_config.set("mcs_std_inter_time", mcs_std_inter_time)
+        runner_config.model_config.set("mcs_mean_log_inter_time", np.log(mcs_mean_inter_time+self.eps))
+        runner_config.model_config.set("mcs_std_log_inter_time", np.log(mcs_std_inter_time+self.eps))
+        runner_config.model_config.set("mcs_mean_event_type", mcs_mean_event_type)
+        runner_config.model_config.set("mcs_std_event_type", mcs_std_event_type)
+        runner_config.model_config.set("mcs_mean_log_event_type", np.log(mcs_mean_event_type+self.eps))
+        runner_config.model_config.set("mcs_std_log_event_type", np.log(mcs_std_event_type+self.eps))
+        runner_config.model_config.set("num_event_types_no_mcs", data_config.data_specs.num_event_types_no_mcs)
+
         self.timer = Timer()
 
         self.metrics_tracker = MetricsTracker()
@@ -263,6 +237,22 @@ class TPPRunnerLinkQuality():
         Returns:
             EasyTPP.BaseModel, dict: the results of the process.
         """
+        source_data = kwargs.get('source_data', None)
+        if source_data is not None:
+            data_config = self.runner_config.data_config
+            backend = self.runner_config.base_config.backend
+            # {'seed': 2019, 'gpu': -1, 'batch_size': 1, 'max_epoch': 800, 'shuffle': False, 'optimizer': 'adam', 'learning_rate': 0.0001, 'valid_freq': 10, 'use_tfb': False, 'metrics': ['acc', 'rmse']}
+            kwargs_train = self.runner_config.trainer_config.get_yaml_config()
+            batch_size = kwargs.get('batch_size', None)
+            if batch_size is not None:
+                kwargs_train['batch_size'] = batch_size
+            self._data_loader = TPPDataLoaderLinkQuality(
+                data_config=data_config,
+                backend=backend,
+                source_data=source_data,
+                **kwargs_train
+            )
+
         current_stage = get_stage(self.runner_config.base_config.stage)
         if current_stage == RunnerPhase.TRAIN:
             return self.train(**kwargs)
@@ -359,12 +349,15 @@ class TPPRunnerLinkQuality():
             test_result = self.run_one_epoch_probability_generation(data_loader, RunnerPhase.PREDICT)
         else:
             test_result = self.run_one_epoch_sample_generation(data_loader, RunnerPhase.PREDICT)
-            
-        # save it to a pkl file
-        model_dir = self.runner_config.base_config.specs['log_folder']
-        logger.critical(f'Save prediction results to {Path(model_dir) / "pred.pkl"}')
-        save_pickle(Path(model_dir) / 'pred.pkl', test_result)
-        return
+        
+        if kwargs.get('return_predictions', False):
+            return test_result
+        else:
+            # save it to a pkl file
+            model_dir = self.runner_config.base_config.specs['log_folder']
+            logger.critical(f'Save prediction results to {Path(model_dir) / "pred.pkl"}')
+            save_pickle(Path(model_dir) / 'pred.pkl', test_result)
+            return
 
     def run_one_epoch(self, data_loader, phase):
         """Run one complete epoch.

@@ -448,9 +448,9 @@ def create_training_dataset(args):
 
     # read configuration from args.config
     with open(args.config, 'r') as f:
-        config = json.load(f)
+        dataset_config = json.load(f)
     # select the source configuration
-    config = config[args.configname]
+    dataset_config = dataset_config[args.configname]
 
     # read experiment configuration
     folder_addr = Path(args.source)
@@ -465,21 +465,114 @@ def create_training_dataset(args):
     with open(folder_addr / 'experiment_config.json', 'r') as f:
         exp_config = json.load(f)
 
-    time_masks = config['time_masks']
-    filter_packet_sizes = config['filter_packet_sizes']
+    time_masks = dataset_config['time_masks']
+    filter_packet_sizes = dataset_config['filter_packet_sizes']
 
     # select the source configuration
-    window_config = config['window_config']
+    window_config = dataset_config['window_config']
     if window_config['type'] == 'event':
         window_size_events = window_config['size']
         max_num_segments = window_config['max_num_segments']
     else:
         logger.error("Only event window configuration is supported for now.")
         return
-    dataset_size_max = config['dataset_size_max']
-    split_ratios = config['split_ratios']
-    dtime_max = config['dtime_max']
-    
+    dataset_size_max = dataset_config['dataset_size_max']
+    split_ratios = dataset_config['split_ratios']
+    dtime_max = dataset_config['dtime_max']
+
+    # prepare the results folder
+    results_folder_addr = folder_addr / 'scheduling' / 'datasets' / args.name
+    results_folder_addr.mkdir(parents=True, exist_ok=True)
+
+    time_bounds = []
+    stream_rntis = []
+    db_id = 0
+    for result_database_file, time_mask in zip(result_database_files, time_masks):
+        packet_analyzer = ULPacketAnalyzer(result_database_file)
+        experiment_length_ts = packet_analyzer.last_ueip_ts - packet_analyzer.first_ueip_ts
+        begin_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
+        end_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
+        time_bounds.append((begin_ts, end_ts))
+        logger.info(f"Database {db_id}, experiment duration: {(experiment_length_ts)} seconds")
+        logger.info(f"Database {db_id}, filtering packets from {begin_ts} to {end_ts}, length: {end_ts-begin_ts} seconds")
+
+        packets = packet_analyzer.figure_packettx_from_ts(begin_ts, begin_ts+1.0) # just take one second of packets
+        packets_rnti_set = set([item['rlc.attempts'][0]['rnti'] for item in packets])
+        packets_rnti_set.discard(None)
+        if len(packets_rnti_set) > 1:
+            logger.error("Multiple RNTIs in the packet stream, exiting...")
+            return
+        stream_rnti = list(packets_rnti_set)[0]
+        stream_rntis.append(stream_rnti)
+
+        db_id += 1
+
+    this_db_events_v2_arr = extract_scheduling_events(result_database_files, time_bounds, stream_rntis, exp_config, dtime_max)
+
+    # create prefinal list of events
+    dataset = []
+    for this_db_events_v2 in this_db_events_v2_arr:
+        logger.info(f"Creating training dataset for this db final")
+        this_db_dataset, dim_process = create_training_dataset_event_window(this_db_events_v2, window_size_events, max_num_segments, dataset_config)
+
+        # print length of dataset
+        logger.info(f"Number of total entries produced by this db dataset: {len(this_db_dataset)}")
+        print(this_db_dataset[0])
+
+        # append elements of one_db_dataset to dataset
+        dataset.extend(this_db_dataset)
+
+    # shuffle the dataset
+    random.shuffle(dataset)
+
+    logger.success(f"Number of total entries in the dataset: {len(dataset)}")
+
+    # Save the dataset config
+    dataset_config = {
+        "stream_rntis" : stream_rntis,
+        "dim_process" : int(dim_process),
+        "max_num_segments" : int(max_num_segments),
+        **dataset_config,
+    }
+    with open(results_folder_addr / 'config.json', 'w') as f:
+        json_obj = json.dumps(dataset_config, indent=4)
+        f.write(json_obj)
+
+    # split
+    train_num = int(len(dataset)*split_ratios[0])
+    dev_num = int(len(dataset)*split_ratios[1])
+    print("train: ", train_num, " - dev: ", dev_num)
+
+    # train
+    train_ds = {
+        'dim_process' : int(dim_process),
+        'train' : dataset[0:train_num],
+    }
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'train.pkl', 'wb') as f:
+        pickle.dump(train_ds, f)
+
+    # dev
+    dev_ds = {
+        'dim_process' : dim_process,
+        'dev' : dataset[train_num:train_num+dev_num],
+    }
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'dev.pkl', 'wb') as f:
+        pickle.dump(dev_ds, f)
+
+    # test
+    test_ds = {
+        'dim_process' : dim_process,
+        'test' : dataset[train_num+dev_num:-1],
+    }
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'test.pkl', 'wb') as f:
+        pickle.dump(test_ds, f)
+
+
+def extract_scheduling_events(result_database_files, time_bounds, stream_rntis, exp_config, dtime_max):
+
     slots_duration_ms = exp_config['slots_duration_ms']
     num_slots_per_frame = exp_config['slots_per_frame']
     total_prbs_num = exp_config['total_prbs_num']
@@ -489,18 +582,9 @@ def create_training_dataset(args):
     scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
     max_harq_attempts = exp_config['max_harq_attempts']
 
-    # prepare the results folder
-    results_folder_addr = folder_addr / 'scheduling' / 'datasets' / args.name
-    results_folder_addr.mkdir(parents=True, exist_ok=True)
-    with open(results_folder_addr / 'config.json', 'w') as f:
-        json_obj = json.dumps(config, indent=4)
-        f.write(json_obj)
-
-    # create prefinal list of events
-    dataset = []
-    for result_database_file, time_mask in zip(result_database_files, time_masks):
+    this_db_events_v2_arr = []
+    for result_database_file, time_bound, stream_rnti in zip(result_database_files, time_bounds, stream_rntis):
         # initiate the analyzers
-        chan_analyzer = ULChannelAnalyzer(result_database_file)
         packet_analyzer = ULPacketAnalyzer(result_database_file)
         sched_analyzer = ULSchedulingAnalyzer(
             total_prbs_num = total_prbs_num, 
@@ -511,34 +595,10 @@ def create_training_dataset(args):
             max_num_frames = max_num_frames,
             db_addr = result_database_file
         )
-        experiment_length_ts = packet_analyzer.last_ueip_ts - packet_analyzer.first_ueip_ts
-        logger.info(f"Total experiment duration: {(experiment_length_ts)} seconds")
-
-        begin_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
-        end_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
-        logger.info(f"Filtering packet arrival events from {begin_ts} to {end_ts}, duration: {experiment_length_ts*time_mask[1]-experiment_length_ts*time_mask[0]} seconds")
-
-        # analyze packets
-        packets = packet_analyzer.figure_packettx_from_ts(begin_ts, begin_ts+0.1)
-        packets_rnti_set = set([item['rlc.attempts'][0]['rnti'] for item in packets])
-        # remove None from the set
-        packets_rnti_set.discard(None)
-        logger.info(f"RNTIs in the packet stream: {packets_rnti_set}")
-        if len(packets_rnti_set) > 1:
-            logger.error("Multiple RNTIs in the packet stream, exiting...")
-            return
-        stream_rnti = list(packets_rnti_set)[0]
+        begin_ts, end_ts = time_bound
 
         # analyze packets
         packets = packet_analyzer.figure_packettx_from_ts(begin_ts, end_ts)
-        packets_rnti_set = set([item['rlc.attempts'][0]['rnti'] for item in packets])
-        # remove None from the set
-        packets_rnti_set.discard(None)
-        logger.info(f"RNTIs in the packet stream: {packets_rnti_set}")
-        if len(packets_rnti_set) > 1:
-            logger.error("Multiple RNTIs in the packet stream, exiting...")
-            return
-        stream_rnti = list(packets_rnti_set)[0]
 
         this_db_events_v1 = []
         logger.info(f"Extract events for dataset v1")
@@ -559,6 +619,7 @@ def create_training_dataset(args):
                 {
                     'segment' : -1, # packet arrival is not a segment
                     'packet_id' : idx,
+                    'depart_timestamp' : packet['ip.out_t'],
                     'timestamp' : packet['ip.in_t'],
                     'slot' : packet_arrival_slot_num,
                     'len' : packet['len'],
@@ -583,6 +644,7 @@ def create_training_dataset(args):
                         'segment' : idx2,
                         'packet_id' : idx,
                         'timestamp' : rlc_attempt['mac.in_t'],
+                        'depart_timestamp' : -1,
                         'slot' : segment_slot_num,
                         'len' : rlc_attempt['len'],
                         'mcs_index' : mcs_index,
@@ -630,55 +692,8 @@ def create_training_dataset(args):
             )
         print("\n", end="")
         this_db_events_v2 = this_db_events_v2[1:]
-
-        logger.info(f"Creating training dataset for this db final")
-        this_db_dataset, dim_process = create_training_dataset_event_window(this_db_events_v2, window_size_events, max_num_segments, config)
-
-        # print length of dataset
-        logger.info(f"Number of total entries produced by this db dataset: {len(this_db_dataset)}")
-        print(this_db_dataset[0])
-
-        # append elements of one_db_dataset to dataset
-        dataset.extend(this_db_dataset)
-
-    # shuffle the dataset
-    random.shuffle(dataset)
-
-    logger.success(f"Number of total entries in the dataset: {len(dataset)}")
-
-    # split
-    train_num = int(len(dataset)*split_ratios[0])
-    dev_num = int(len(dataset)*split_ratios[1])
-    print("train: ", train_num, " - dev: ", dev_num)
-
-    # train
-    train_ds = {
-        'dim_process' : int(dim_process),
-        'train' : dataset[0:train_num],
-    }
-    # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'train.pkl', 'wb') as f:
-        pickle.dump(train_ds, f)
-
-    # dev
-    dev_ds = {
-        'dim_process' : dim_process,
-        'dev' : dataset[train_num:train_num+dev_num],
-    }
-    # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'dev.pkl', 'wb') as f:
-        pickle.dump(dev_ds, f)
-
-    # test
-    test_ds = {
-        'dim_process' : dim_process,
-        'test' : dataset[train_num+dev_num:-1],
-    }
-    # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'test.pkl', 'wb') as f:
-        pickle.dump(test_ds, f)
-
-    
+        this_db_events_v2_arr.append(this_db_events_v2)    
+    return this_db_events_v2_arr
 
 def create_training_dataset_event_window(this_db_events_v2, window_size_events, max_num_segments, config):
     
