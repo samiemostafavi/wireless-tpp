@@ -21,7 +21,6 @@ class TorchBaseModel(nn.Module):
         self.eps = torch.finfo(torch.float32).eps
 
         self.is_prior = model_config.model_specs.get('prior', False)
-        self.includes_mcs = model_config.model_specs.get('includes_mcs', False)
         
         self.gen_config = model_config.thinning
         self.event_sampler = None

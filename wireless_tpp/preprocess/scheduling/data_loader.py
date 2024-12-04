@@ -16,6 +16,7 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
         self.data_config = data_config
         self.num_event_types = data_config.data_specs.num_event_types
         self.backend = backend
+        self.source_data = kwargs.get('source_data', None)
         self.kwargs = kwargs
 
     def build_input_from_pkl(self, source_dir: str, split: str):
@@ -116,13 +117,39 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
         Returns:
             EasyTPP.DataLoader: the data loader for tpp data.
         """
-        data_dir = self.data_config.get_data_dir(split)
-        data_source_type = data_dir.split('.')[-1]
-
-        if data_source_type == 'pkl':
-            data = self.build_input_from_pkl(data_dir, split)
+        # check in kwargs if there is datalist passed
+        if self.source_data is not None:
+            # we incorporate the following additional keys in the source_data
+            slot_seqs = [[x["slot"] for x in seq] for seq in self.source_data]
+            len_seqs = [[x["len"] for x in seq] for seq in self.source_data]
+            mcs_seqs = [[x["mcs_index"] for x in seq] for seq in self.source_data]
+            mac_retx_seqs = [[x["mac_retx"] for x in seq] for seq in self.source_data]
+            rlc_failed_seqs = [[x["rlc_failed"] for x in seq] for seq in self.source_data]
+            num_rbs_seqs = [[x["num_rbs"] for x in seq] for seq in self.source_data]
+            time_seqs = [[x["time_since_start"] for x in seq] for seq in self.source_data]
+            type_seqs = [[x["type_event"] for x in seq] for seq in self.source_data]
+            time_delta_seqs = [[x["time_since_last_event"] for x in seq] for seq in self.source_data]
+            data = dict(
+                {
+                    'slot_seqs': slot_seqs,
+                    'len_seqs': len_seqs,
+                    'mcs_seqs': mcs_seqs,
+                    'mac_retx_seqs': mac_retx_seqs,
+                    'rlc_failed_seqs': rlc_failed_seqs,
+                    'num_rbs_seqs': num_rbs_seqs,
+                    'time_seqs': time_seqs, 
+                    'time_delta_seqs': time_delta_seqs, 
+                    'type_seqs': type_seqs
+                }
+            )
         else:
-            data = self.build_input_from_json(data_dir, split)
+            data_dir = self.data_config.get_data_dir(split)
+            data_source_type = data_dir.split('.')[-1]
+
+            if data_source_type == 'pkl':
+                data = self.build_input_from_pkl(data_dir, split)
+            else:
+                data = self.build_input_from_json(data_dir, split)
 
         dataset = TPPDatasetScheduling(data)
         tokenizer = EventTokenizer(self.data_config.data_specs)

@@ -240,9 +240,9 @@ def plot_data(args):
 
     # read configuration from args.config
     with open(args.config, 'r') as f:
-        config = json.load(f)
+        dataset_config = json.load(f)
     # select the source configuration
-    config = config[args.configname]
+    dataset_config = dataset_config[args.configname]
 
     # read experiment configuration
     folder_addr = Path(args.source)
@@ -257,12 +257,12 @@ def plot_data(args):
     with open(folder_addr / 'experiment_config.json', 'r') as f:
         exp_config = json.load(f)
 
-    time_masks = config['time_masks']
-    filter_packet_sizes = config['filter_packet_sizes']
-    window_config = config['window_config']
-    dataset_size_max = config['dataset_size_max']
-    split_ratios = config['split_ratios']
-    dtime_max = config['dtime_max']
+    time_masks = dataset_config['time_masks']
+    filter_packet_sizes = dataset_config['filter_packet_sizes']
+    window_config = dataset_config['window_config']
+    dataset_size_max = dataset_config['dataset_size_max']
+    split_ratios = dataset_config['split_ratios']
+    dtime_max = dataset_config['dtime_max']
     
     slots_duration_ms = exp_config['slots_duration_ms']
     num_slots_per_frame = exp_config['slots_per_frame']
@@ -277,7 +277,7 @@ def plot_data(args):
     results_folder_addr = folder_addr / 'link_quality'/ 'pre_plots' / args.name
     results_folder_addr.mkdir(parents=True, exist_ok=True)
     with open(results_folder_addr / 'config.json', 'w') as f:
-        json_obj = json.dumps(config, indent=4)
+        json_obj = json.dumps(dataset_config, indent=4)
         f.write(json_obj)
 
     # common
@@ -473,9 +473,9 @@ def create_training_dataset(args):
 
     # read configuration from args.config
     with open(args.config, 'r') as f:
-        config = json.load(f)
+        dataset_config = json.load(f)
     # select the source configuration
-    config = config[args.configname]
+    dataset_config = dataset_config[args.configname]
 
     # read experiment configuration
     folder_addr = Path(args.source)
@@ -490,65 +490,50 @@ def create_training_dataset(args):
     with open(folder_addr / 'experiment_config.json', 'r') as f:
         exp_config = json.load(f)
 
-    time_masks = config['time_masks']
-    filter_packet_sizes = config['filter_packet_sizes']
+    time_masks = dataset_config['time_masks']
+    filter_packet_sizes = dataset_config['filter_packet_sizes']
 
     # select the source configuration
-    window_config = config['window_config']
-    dataset_size_max = config['dataset_size_max']
-    split_ratios = config['split_ratios']
-    dtime_max = config['dtime_max']
-    
-    slots_duration_ms = exp_config['slots_duration_ms']
-    num_slots_per_frame = exp_config['slots_per_frame']
-    total_prbs_num = exp_config['total_prbs_num']
-    symbols_per_slot = exp_config['symbols_per_slot']
-    scheduling_map_num_integers = exp_config['scheduling_map_num_integers']
-    max_num_frames = exp_config['max_num_frames']
-    scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
-    max_harq_attempts = exp_config['max_harq_attempts']
+    window_config = dataset_config['window_config']
+    split_ratios = dataset_config['split_ratios']
+    dtime_max = dataset_config['dtime_max']
 
-    # prepare the results folder
-    results_folder_addr = folder_addr / 'link_quality' / 'datasets' / args.name
-    results_folder_addr.mkdir(parents=True, exist_ok=True)
-    with open(results_folder_addr / 'config.json', 'w') as f:
-        json_obj = json.dumps(config, indent=4)
-        f.write(json_obj)
+    # decide about dimensions first and time_bounds
+    # determine dim_process_mcs, min_mcs, max_mcs, time_bounds, and stream_rntis
+    dim_process_mcs = 0
+    min_mcs, max_mcs = np.inf, -np.inf
+    db_id = 0
+    time_bounds = []
+    stream_rntis = []
+    for result_database_file, time_mask in zip(result_database_files, time_masks):
+        chan_analyzer = ULChannelAnalyzer(result_database_file)
+        experiment_length_ts = chan_analyzer.last_ts - chan_analyzer.first_ts
+        begin_ts = chan_analyzer.first_ts+experiment_length_ts*time_mask[0]
+        end_ts = chan_analyzer.first_ts+experiment_length_ts*time_mask[1]
+        logger.info(f"Database id: {db_id}, experiment duration: {(experiment_length_ts)} seconds")
+        logger.info(f"Database id: {db_id}, filtering link events from {begin_ts} to {end_ts}, duration: {end_ts-begin_ts} seconds")
+        time_bounds.append((begin_ts, end_ts))
 
+        packet_analyzer = ULPacketAnalyzer(result_database_file)
+        packets = packet_analyzer.figure_packettx_from_ts(begin_ts, begin_ts+1.0) # just take one second of packets
+        packets_rnti_set = set([item['rlc.attempts'][0]['rnti'] for item in packets])
+        packets_rnti_set.discard(None)
+        if len(packets_rnti_set) > 1:
+            logger.error("Multiple RNTIs in the packet stream, exiting...")
+            return
+        stream_rnti = list(packets_rnti_set)[0]
+        stream_rntis.append(stream_rnti)
 
-    # decide about dimensions first
-    # determine dim_process_mcs, min_mcs, and max_mcs
-    if config['mcs_events']:
-        dim_process_mcs = 0
-        min_mcs, max_mcs = np.inf, -np.inf
-        for result_database_file, time_mask in zip(result_database_files, time_masks):
-            chan_analyzer = ULChannelAnalyzer(result_database_file)
-            experiment_length_ts = chan_analyzer.last_ts - chan_analyzer.first_ts
-            begin_ts = chan_analyzer.first_ts+experiment_length_ts*time_mask[0]
-            end_ts = chan_analyzer.first_ts+experiment_length_ts*time_mask[1]
-
-            packet_analyzer = ULPacketAnalyzer(result_database_file)
-            packets = packet_analyzer.figure_packettx_from_ts(begin_ts, begin_ts+1.0) # just take one second of packets
-            packets_rnti_set = set([item['rlc.attempts'][0]['rnti'] for item in packets])
-            packets_rnti_set.discard(None)
-            if len(packets_rnti_set) > 1:
-                logger.error("Multiple RNTIs in the packet stream, exiting...")
-                return
-            stream_rnti = list(packets_rnti_set)[0]
-
-            # extract MCS value time series
-            mcs_list = chan_analyzer.find_mcs_from_ts(begin_ts,end_ts)
-            mcs_list = [item for item in mcs_list if item['rnti'] == stream_rnti]
-            set_mcs = set([item['mcs'] for item in mcs_list])
-            logger.info(f"MCSs in this experiment, min: {min(set_mcs)}, max: {max(set_mcs)}, MCSs: {set_mcs}")
-            min_mcs = min(min_mcs, min(set_mcs))
-            max_mcs = max(max_mcs, max(set_mcs))
-            dim_process_mcs = max_mcs-min_mcs+1
-        logger.success(f"MCS dimensions, min: {min_mcs}, max: {max_mcs}, dim_process_mcs: {dim_process_mcs}")
-    else:
-        dim_process_mcs = 0
-        min_mcs, max_mcs = None, None
-
+        # extract MCS value time series
+        mcs_list = chan_analyzer.find_mcs_from_ts(begin_ts,end_ts)
+        mcs_list = [item for item in mcs_list if item['rnti'] == stream_rnti]
+        set_mcs = set([item['mcs'] for item in mcs_list])
+        logger.info(f"Database id: {db_id}, MCSs in this experiment, min: {min(set_mcs)}, max: {max(set_mcs)}, MCSs: {set_mcs}")
+        min_mcs = min(min_mcs, min(set_mcs))
+        max_mcs = max(max_mcs, max(set_mcs))
+        dim_process_mcs = max_mcs-min_mcs+1
+        db_id += 1
+    logger.success(f"MCS dimensions, min: {min_mcs}, max: {max_mcs}, dim_process_mcs: {dim_process_mcs}")
 
     # create prefinal list of events
     # event types: 
@@ -563,8 +548,101 @@ def create_training_dataset(args):
     # in total it is dim_process_mcs types of events
     dim_process_no_mcs = 8
     dim_process = dim_process_no_mcs+dim_process_mcs
+
+    dataset_config = {
+        "stream_rntis" : stream_rntis,
+        "min_mcs": int(min_mcs),
+        "max_mcs": int(max_mcs),
+        "dim_process_mcs": int(dim_process_mcs),
+        "dim_process_no_mcs": int(dim_process_no_mcs),
+        "dim_process": int(dim_process),
+        **dataset_config
+    }
+
+    # prepare the results folder
+    results_folder_addr = folder_addr / 'link_quality' / 'datasets' / args.name
+    results_folder_addr.mkdir(parents=True, exist_ok=True)
+    with open(results_folder_addr / 'config.json', 'w') as f:
+        json_obj = json.dumps(dataset_config, indent=4)
+        f.write(json_obj)
+
+    link_retransmission_events_arr, link_mcs_events_arr = extract_link_quality_events(result_database_files, time_bounds, stream_rntis, exp_config, dim_process_no_mcs, min_mcs, dtime_max)
+
     dataset = []
-    for result_database_file, time_mask in zip(result_database_files, time_masks):
+    for link_retransmission_events, link_mcs_events in zip(link_retransmission_events_arr, link_mcs_events_arr):
+
+        if window_config['type'] == 'time':
+            one_db_dataset = create_training_dataset_time_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, dataset_config)
+        elif window_config['type'] == 'event':
+            one_db_dataset = create_training_dataset_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, dataset_config)
+        elif window_config['type'] == 'mcs_event':
+            one_db_dataset = create_training_dataset_mcs_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, dataset_config)
+        else:
+            logger.error("Invalid window type")
+
+        # print length of dataset
+        logger.info(f"Number of total entries produced by this db dataset: {len(one_db_dataset)}")
+        print(one_db_dataset[0])
+
+        # append elements of one_db_dataset to dataset
+        dataset.extend(one_db_dataset)
+
+    # shuffle the dataset
+    random.shuffle(dataset)
+
+    logger.success(f"Number of total entries in the dataset: {len(dataset)}")
+
+    # split
+    train_num = int(len(dataset)*split_ratios[0])
+    dev_num = int(len(dataset)*split_ratios[1])
+    print("train: ", train_num, " - dev: ", dev_num)
+    # train
+    train_ds = {
+        'dim_process_no_mcs' : int(dim_process_no_mcs),
+        'min_mcs' : int(min_mcs),
+        'dim_process' : int(dim_process),
+        'train' : dataset[0:train_num],
+    }
+
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'train.pkl', 'wb') as f:
+        pickle.dump(train_ds, f)
+    # dev
+    dev_ds = {
+        'dim_process_no_mcs' : int(dim_process_no_mcs),
+        'min_mcs' : int(min_mcs),
+        'dim_process' : dim_process,
+        'dev' : dataset[train_num:train_num+dev_num],
+    }
+
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'dev.pkl', 'wb') as f:
+        pickle.dump(dev_ds, f)
+    test_ds = {
+        'dim_process_no_mcs' : int(dim_process_no_mcs),
+        'min_mcs' : int(min_mcs),
+        'dim_process' : dim_process,
+        'test' : dataset[train_num+dev_num:-1],
+    }
+
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'test.pkl', 'wb') as f:
+        pickle.dump(test_ds, f)
+
+
+def extract_link_quality_events(result_database_files, time_bounds, stream_rntis, exp_config, dim_process_no_mcs, min_mcs, dtime_max):
+    
+    slots_duration_ms = exp_config['slots_duration_ms']
+    num_slots_per_frame = exp_config['slots_per_frame']
+    total_prbs_num = exp_config['total_prbs_num']
+    symbols_per_slot = exp_config['symbols_per_slot']
+    scheduling_map_num_integers = exp_config['scheduling_map_num_integers']
+    max_num_frames = exp_config['max_num_frames']
+    scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
+    max_harq_attempts = exp_config['max_harq_attempts']
+
+    link_retransmission_events_arr, link_mcs_events_arr = [], []
+    for result_database_file, time_bound, stream_rnti in zip(result_database_files, time_bounds, stream_rntis):
 
         # initiate the analyzer
         chan_analyzer = ULChannelAnalyzer(result_database_file)
@@ -578,23 +656,8 @@ def create_training_dataset(args):
             max_num_frames = max_num_frames,
             db_addr = result_database_file
         )
-        experiment_length_ts = chan_analyzer.last_ts - chan_analyzer.first_ts
-        logger.info(f"Total experiment duration: {(experiment_length_ts)} seconds")
 
-        begin_ts = chan_analyzer.first_ts+experiment_length_ts*time_mask[0]
-        end_ts = chan_analyzer.first_ts+experiment_length_ts*time_mask[1]
-        logger.info(f"Filtering link events from {begin_ts} to {end_ts}, duration: {experiment_length_ts*time_mask[1]-experiment_length_ts*time_mask[0]} seconds")
-
-        # find the RNTI of the stream
-        packets = packet_analyzer.figure_packettx_from_ts(begin_ts, begin_ts+1.0) # just take one second of packets
-        packets_rnti_set = set([item['rlc.attempts'][0]['rnti'] for item in packets])
-        # remove None from the set
-        packets_rnti_set.discard(None)
-        logger.info(f"RNTIs in the packet stream: {packets_rnti_set}")
-        if len(packets_rnti_set) > 1:
-            logger.error("Multiple RNTIs in the packet stream, exiting...")
-            return
-        stream_rnti = list(packets_rnti_set)[0]
+        begin_ts, end_ts = time_bound
 
         # find successful retx transmissions
         successful_retx_schedule = sched_analyzer.find_retx_schedules_from_ts(begin_ts, end_ts, stream_rnti, SCHED_OFFSET_S=scheduling_time_ahead_ms/1000, only_successful=True)
@@ -619,57 +682,56 @@ def create_training_dataset(args):
         # sort the events based on timestamp
         combined_events = sorted(combined_events, key=lambda x: x['timestamp'], reverse=False)
 
-        if config['mcs_events']:
-            # extract MCS value time series
-            mcs_list = chan_analyzer.find_mcs_from_ts(begin_ts,end_ts)
-            mcs_list = [item for item in mcs_list if item['rnti'] == stream_rnti]
-            filtered_mcs_list = []
-            previous_mcs = None
-            for item in mcs_list:
-                if item['mcs'] != previous_mcs:
-                    filtered_mcs_list.append(item)
-                    previous_mcs = item['mcs']
-            mcs_change_events_list = filtered_mcs_list
+        # extract MCS value time series
+        mcs_list = chan_analyzer.find_mcs_from_ts(begin_ts,end_ts)
+        mcs_list = [item for item in mcs_list if item['rnti'] == stream_rnti]
+        filtered_mcs_list = []
+        previous_mcs = None
+        for item in mcs_list:
+            if item['mcs'] != previous_mcs:
+                filtered_mcs_list.append(item)
+                previous_mcs = item['mcs']
+        mcs_change_events_list = filtered_mcs_list
         
+        prefinal_mcs_events_list = []
+        for item in mcs_change_events_list:
+            prefinal_mcs_events_list.append({
+                'type_event' : dim_process_no_mcs+int(item['mcs'] - min_mcs),
+                'timestamp' : item['timestamp']
+            })
+
+        # sort the mcs events based on timestamp
+        prefinal_mcs_events_list = sorted(prefinal_mcs_events_list, key=lambda x: x['timestamp'], reverse=False)
+
         link_mcs_events = []
-        if config['mcs_events']:
-            prefinal_mcs_events_list = []
-            for item in mcs_change_events_list:
-                prefinal_mcs_events_list.append({
-                    'type_event' : dim_process_no_mcs+int(item['mcs'] - min_mcs),
+        last_mcs_event_ts = 0
+        for item in prefinal_mcs_events_list:
+            frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
+                timestamp=item['timestamp'],
+                SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
+            )
+
+            time_since_frame0 = frame_num*num_slots_per_frame*slots_duration_ms + slot_num*slots_duration_ms
+            time_since_last_event = time_since_frame0-last_mcs_event_ts
+            #if time_since_last_event < 0:
+            #    time_since_last_event = time_since_frame0 + max_num_frames*num_slots_per_frame*slots_duration_ms
+            if time_since_last_event < 0:
+                time_since_last_event = time_since_frame0
+
+            last_mcs_event_ts = time_since_frame0
+
+            if time_since_last_event > dtime_max:
+                continue
+
+            link_mcs_events.append(
+                {
+                    'type_event' : item['type_event'],
+                    'time_since_start' : time_since_frame0,
+                    'time_since_last_event' : time_since_last_event,
                     'timestamp' : item['timestamp']
-                })
-
-            # sort the mcs events based on timestamp
-            prefinal_mcs_events_list = sorted(prefinal_mcs_events_list, key=lambda x: x['timestamp'], reverse=False)
-
-            last_mcs_event_ts = 0
-            for item in prefinal_mcs_events_list:
-                frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
-                    timestamp=item['timestamp'],
-                    SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
-                )
-
-                time_since_frame0 = frame_num*num_slots_per_frame*slots_duration_ms + slot_num*slots_duration_ms
-                time_since_last_event = time_since_frame0-last_mcs_event_ts
-                #if time_since_last_event < 0:
-                #    time_since_last_event = time_since_frame0 + max_num_frames*num_slots_per_frame*slots_duration_ms
-                if time_since_last_event < 0:
-                    time_since_last_event = time_since_frame0
-
-                last_mcs_event_ts = time_since_frame0
-
-                if time_since_last_event > dtime_max:
-                    continue
-
-                link_mcs_events.append(
-                    {
-                        'type_event' : item['type_event'],
-                        'time_since_start' : time_since_frame0,
-                        'time_since_last_event' : time_since_last_event,
-                        'timestamp' : item['timestamp']
-                    }
-                )
+                }
+            )
+        link_mcs_events_arr.append(link_mcs_events)
 
         prefinal_events_list = []
         for item in combined_events:
@@ -715,101 +777,19 @@ def create_training_dataset(args):
                     'mcs_index' : item['mcs_index']
                 }
             )
+        link_retransmission_events_arr.append(link_retransmission_events)
 
-        if window_config['type'] == 'time':
-            one_db_dataset = create_training_dataset_time_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, config)
-        elif window_config['type'] == 'event':
-            one_db_dataset = create_training_dataset_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, config)
-        elif window_config['type'] == 'mcs_event':
-            if not config['mcs_events']:
-                logger.error("Invalid window type, window type is mcs_event, but mcs_events is False")
-                return
-            one_db_dataset = create_training_dataset_mcs_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, config)
-        else:
-            logger.error("Invalid window type")
+    return link_retransmission_events_arr, link_mcs_events_arr
 
-        # print length of dataset
-        logger.info(f"Number of total entries produced by this db dataset: {len(one_db_dataset)}")
-        print(one_db_dataset[0])
-
-        # append elements of one_db_dataset to dataset
-        dataset.extend(one_db_dataset)
-
-    # shuffle the dataset
-    random.shuffle(dataset)
-
-    logger.success(f"Number of total entries in the dataset: {len(dataset)}")
-
-    # split
-    train_num = int(len(dataset)*split_ratios[0])
-    dev_num = int(len(dataset)*split_ratios[1])
-    print("train: ", train_num, " - dev: ", dev_num)
-    # train
-    if not config['mcs_events']:
-        train_ds = {
-            'dim_process' : int(dim_process),
-            'train' : dataset[0:train_num],
-        }
-    else:
-        train_ds = {
-            'dim_process_no_mcs' : int(dim_process_no_mcs),
-            'min_mcs' : int(min_mcs),
-            'dim_process' : int(dim_process),
-            'train' : dataset[0:train_num],
-        }
-
-    # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'train.pkl', 'wb') as f:
-        pickle.dump(train_ds, f)
-    # dev
-    if not config['mcs_events']:
-        dev_ds = {
-            'dim_process' : dim_process,
-            'dev' : dataset[train_num:train_num+dev_num],
-        }
-    else:
-        dev_ds = {
-            'dim_process_no_mcs' : int(dim_process_no_mcs),
-            'min_mcs' : int(min_mcs),
-            'dim_process' : dim_process,
-            'dev' : dataset[train_num:train_num+dev_num],
-        }
-
-    # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'dev.pkl', 'wb') as f:
-        pickle.dump(dev_ds, f)
-    # test
-    if not config['mcs_events']:
-        test_ds = {
-            'dim_process' : dim_process,
-            'test' : dataset[train_num+dev_num:-1],
-        }
-    else:
-        test_ds = {
-            'dim_process_no_mcs' : int(dim_process_no_mcs),
-            'min_mcs' : int(min_mcs),
-            'dim_process' : dim_process,
-            'test' : dataset[train_num+dev_num:-1],
-        }
-
-    # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'test.pkl', 'wb') as f:
-        pickle.dump(test_ds, f)
-
-    
-
-def create_training_dataset_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, config):
+def create_training_dataset_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, dataset_config):
     
     # select the source configuration
-    window_config = config['window_config']
+    window_config = dataset_config['window_config']
     history_window_size = window_config['size']
-    dataset_size_max = config['dataset_size_max']
+    dataset_size_max = dataset_config['dataset_size_max']
 
-    if config['mcs_events']:
-        link_events = [ *link_retransmission_events, *link_mcs_events ]
-        sorted_link_events = sorted(link_events, key=lambda x: x['timestamp'], reverse=False)
-    else:
-        sorted_link_events = link_retransmission_events
+    link_events = [ *link_retransmission_events, *link_mcs_events ]
+    sorted_link_events = sorted(link_events, key=lambda x: x['timestamp'], reverse=False)
 
     dataset = []
     for idx,_ in enumerate(sorted_link_events):
@@ -849,12 +829,12 @@ def create_training_dataset_event_window(link_retransmission_events, link_mcs_ev
     return dataset
 
 
-def create_training_dataset_mcs_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, config):
+def create_training_dataset_mcs_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, dataset_config):
 
     # select the source configuration
-    window_config = config['window_config']
+    window_config = dataset_config['window_config']
     history_window_size = window_config['size']
-    dataset_size_max = config['dataset_size_max']
+    dataset_size_max = dataset_config['dataset_size_max']
 
     link_events = [ *link_retransmission_events, *link_mcs_events ]
     sorted_link_events = sorted(link_events, key=lambda x: x['timestamp'], reverse=False)
@@ -902,12 +882,12 @@ def create_training_dataset_mcs_event_window(link_retransmission_events, link_mc
     return dataset
 
 
-def create_training_dataset_time_window(link_retransmission_events, link_mcs_events, dim_process, config):
+def create_training_dataset_time_window(link_retransmission_events, link_mcs_events, dim_process, dataset_config):
 
     # select the source configuration
-    window_config = config['window_config']
+    window_config = dataset_config['window_config']
     history_window_size = window_config['size']
-    dataset_size_max = config['dataset_size_max']
+    dataset_size_max = dataset_config['dataset_size_max']
 
     stop = False
     dataset = []
