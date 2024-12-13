@@ -59,7 +59,7 @@ def plot_data(args):
 
     # Plot probability distribution of delta times
     # Create a histogram plot of the delta times
-    fig = px.histogram(x=delta_times_ms, nbins=100, title='Probability Distribution of Delta Times', histnorm='probability')
+    fig = px.histogram(x=delta_times_ms, nbins=1000, title='Probability Distribution of Delta Times', histnorm='probability')
     fig.update_layout(xaxis_range=[0, dtime_max])
     fig.update_layout(xaxis_title='Delta Time (ms)', yaxis_title='Probability')
     fig.write_html(str(results_folder_addr / 'delta_times.html'))

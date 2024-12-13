@@ -238,6 +238,9 @@ def filter_successful_retx_schedule(grouped_retx_schedules, grouped_rlc_failed_s
 
 def plot_data(args):
 
+    if args.interarrival:
+        return figure_retransmission_probabilities(args)
+
     # read configuration from args.config
     with open(args.config, 'r') as f:
         dataset_config = json.load(f)
@@ -464,6 +467,160 @@ def plot_data(args):
         fig.update_yaxes(title_text='Values', row=3, col=1)
         fig.update_xaxes(matches='x')
         fig.write_html(str(results_folder_addr / 'combined_plot.html'))
+
+
+def figure_retransmission_probabilities(args):
+
+    # read configuration from args.config
+    with open(args.config, 'r') as f:
+        config = json.load(f)
+    # select the source configuration
+    config = config[args.configname]
+
+    # read experiment configuration
+    folder_addr = Path(args.source)
+    # find all .db files in the folder
+    db_files = list(folder_addr.glob("*.db"))
+    if not db_files:
+        logger.error("No database files found in the specified folder.")
+        return
+    result_database_files = [str(db_file) for db_file in db_files]
+
+    # read exp configuration from args.config
+    with open(folder_addr / 'experiment_config.json', 'r') as f:
+        exp_config = json.load(f)
+
+    time_masks = config['time_masks']
+    filter_packet_sizes = config['filter_packet_sizes']
+    window_config = config['window_config']
+    dataset_size_max = config['dataset_size_max']
+    split_ratios = config['split_ratios']
+    dtime_max = config['dtime_max']
+    
+    slots_duration_ms = exp_config['slots_duration_ms']
+    num_slots_per_frame = exp_config['slots_per_frame']
+    total_prbs_num = exp_config['total_prbs_num']
+    symbols_per_slot = exp_config['symbols_per_slot']
+    scheduling_map_num_integers = exp_config['scheduling_map_num_integers']
+    max_num_frames = exp_config['max_num_frames']
+    scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
+    max_harq_attempts = exp_config['max_harq_attempts']
+
+    # prepare the results folder
+    results_folder_addr = folder_addr / 'link_quality' / 'pre_plots' / args.name
+    results_folder_addr.mkdir(parents=True, exist_ok=True)
+    with open(results_folder_addr / 'config.json', 'w') as f:
+        json_obj = json.dumps(config, indent=4)
+        f.write(json_obj)
+
+    # statistics dictionary
+    stats_dict = {}
+
+    # data lists
+    prev_end_ts = 0
+    seg_retx_num_list = np.array([])
+    seg_failed_list = np.array([])
+    seg_mcs_list = np.array([])
+    seg_num_rbs_list = np.array([])
+    seg_num_bytes_list = np.array([])
+    #frame_start_ts_list = np.array([])
+    for result_database_file, time_mask in zip(result_database_files, time_masks):
+        packet_analyzer = ULPacketAnalyzer(result_database_file)
+        sched_analyzer = ULSchedulingAnalyzer(
+            total_prbs_num = total_prbs_num, 
+            symbols_per_slot = symbols_per_slot,
+            slots_per_frame = num_slots_per_frame, 
+            slots_duration_ms = slots_duration_ms, 
+            scheduling_map_num_integers = scheduling_map_num_integers,
+            max_num_frames = max_num_frames,
+            db_addr = result_database_file
+        )
+        experiment_length_ts = packet_analyzer.last_ueip_ts - packet_analyzer.first_ueip_ts
+        logger.info(f"Total experiment duration: {(experiment_length_ts)} seconds")
+
+        begin_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
+        end_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
+        logger.info(f"Filtering packet arrival events from {begin_ts} to {end_ts}, duration: {experiment_length_ts*time_mask[1]-experiment_length_ts*time_mask[0]} seconds")
+
+        # analyze packets
+        packets = packet_analyzer.figure_packettx_from_ts(begin_ts, end_ts)
+        this_db_packet_arrival_ts = []
+        #this_db_frame_start_ts = []
+        this_db_slot_num = []
+        this_db_seg_num_rbs = []
+        this_db_seg_num_bytes = []
+        this_db_seg_mcs = []
+        this_db_seg_retx_num = []
+        this_db_seg_failed = []
+        logger.info(f"Extract events for plotting")
+        prev_mcs = 0
+        for idx, packet in enumerate(packets):
+            print(f"\rProcessing packet {idx + 1}/{len(packets)} ({(idx + 1) / len(packets) * 100:.2f}%) with packet sn: {packet['sn']}", end="")
+            this_db_packet_arrival_ts.append((packet['ip.in_t']-begin_ts+prev_end_ts)*1000)
+            # add the frame start event
+            #this_db_frame_start_ts.append((sched_analyzer.find_frame_start_ts_from_ts(packet['ip.in_t'])-begin_ts+prev_end_ts)*1000)
+
+            frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
+                timestamp=packet['ip.in_t'],
+                SCHED_OFFSET_S=scheduling_time_ahead_ms/1000
+            )
+            this_db_slot_num.append(slot_num)
+
+            for idx2, rlc_attempt in enumerate(packet['rlc.attempts']):
+                t_mcs = rlc_attempt['mac.attempts'][0]['mcs']
+                if t_mcs == 0:
+                    t_mcs = prev_mcs
+                prev_mcs = t_mcs
+
+                t_rbs = rlc_attempt['mac.attempts'][0]['rbs']
+                t_bytes = rlc_attempt['len']
+                t_num_retx = len(rlc_attempt['mac.attempts'])-1
+                t_failed = int(not rlc_attempt['acked'])
+                
+                this_db_seg_num_rbs.append(t_rbs)
+                this_db_seg_retx_num.append(t_num_retx)
+                this_db_seg_failed.append(t_failed)
+                this_db_seg_mcs.append(t_mcs)
+                this_db_seg_num_bytes.append(t_bytes)
+
+                if t_mcs not in stats_dict:
+                    stats_dict[t_mcs] = {
+                        t_rbs: {
+                            'bytes': {},
+                            'retx': [0,0,0,0],
+                            'failed': 0,
+                            'total': 0
+                        }
+                    }
+                else:
+                    if t_rbs not in stats_dict[t_mcs]:
+                        stats_dict[t_mcs][t_rbs] = {
+                            'bytes': {},
+                            'retx': [0,0,0,0],
+                            'failed': 0,
+                            'total': 0
+                        }
+
+                if t_bytes not in stats_dict[t_mcs][t_rbs]['bytes']:
+                    stats_dict[t_mcs][t_rbs]['bytes'][t_bytes] = 1
+                else:
+                    stats_dict[t_mcs][t_rbs]['bytes'][t_bytes] += 1
+
+                stats_dict[t_mcs][t_rbs]['retx'][t_num_retx] += 1
+                stats_dict[t_mcs][t_rbs]['failed'] += t_failed
+                stats_dict[t_mcs][t_rbs]['total'] += 1
+
+        seg_retx_num_list = np.concatenate((seg_retx_num_list, np.array(this_db_seg_retx_num)))
+        seg_failed_list = np.concatenate((seg_failed_list, np.array(this_db_seg_failed)))
+        seg_mcs_list = np.concatenate((seg_mcs_list, np.array(this_db_seg_mcs)))
+        seg_num_rbs_list = np.concatenate((seg_num_rbs_list, np.array(this_db_seg_num_rbs)))
+        seg_num_bytes_list = np.concatenate((seg_num_bytes_list, np.array(this_db_seg_num_bytes)))
+
+    print(stats_dict)
+
+    with open(results_folder_addr / 'retx_stats.json', 'w') as f:
+        json.dump(stats_dict, f, indent=4)
+    
 
     
 def create_training_dataset(args):

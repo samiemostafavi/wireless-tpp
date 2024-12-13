@@ -85,10 +85,11 @@ python main.py -t packet_arrival -u plot_data -s data/s63_results -c config/data
 Plot the processed data (link_quality)
 ```
 python main.py -t link_quality -u plot_data -s data/s63_results -c config/dataset_config.json -g s63_link_retx -n test0
+python main.py -t link_quality -u plot_data -v -s data/s63_results -c config/dataset_config.json -g s63_link_retx -n test0
 python main.py -t link_quality -u plot_data -f -s data/s63_results -c config/dataset_config.json -g s63_link_retx -n test0
 ```
 
-Plot the processed data (scheduling)
+Plot the processed data (scheduling) Use `-v` to plot interarrival plot
 ```
 python main.py -t scheduling -u plot_data -s data/s63_results -c config/dataset_config.json -g s63_scheduling -n test0
 python main.py -t scheduling -u plot_data -v -s data/s63_results -c config/dataset_config.json -g s63_scheduling -n test0
