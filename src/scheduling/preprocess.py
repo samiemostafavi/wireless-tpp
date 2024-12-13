@@ -354,9 +354,15 @@ def plot_scheduling_interarrival_data(args):
 
     # data lists
     prev_end_ts = 0
-    segment_0_delay_list, segment_1_delay_list, segment_2_delay_list = np.array([]), np.array([]), np.array([])
+    segment_0_delay_list, segment_1_delay_list, segment_2_delay_list, segment_3_delay_list, segment_4_delay_list, segment_5_delay_list = np.array([]), np.array([]), np.array([]), np.array([]), np.array([]), np.array([])
+    block_proc_delay_list = np.array([])
+    retx_first_slot_list = np.array([])
+    retx_delay_list = np.array([])
+    retx2_first_slot_list = np.array([])
+    retx2_delay_list = np.array([])
     packet_arrival_ts_list = np.array([])
-    frame_start_ts_list = np.array([])
+    slot_num_list = np.array([])
+    #frame_start_ts_list = np.array([])
     for result_database_file, time_mask in zip(result_database_files, time_masks):
         # initiate the analyzers
         chan_analyzer = ULChannelAnalyzer(result_database_file)
@@ -380,47 +386,115 @@ def plot_scheduling_interarrival_data(args):
         # analyze packets
         packets = packet_analyzer.figure_packettx_from_ts(begin_ts, end_ts)
         this_db_packet_arrival_ts = []
-        this_db_frame_start_ts = []
+        #this_db_frame_start_ts = []
+        this_db_slot_num = []
+        this_db_retx_first_slot = []
+        this_db_retx_delay = []
+        this_db_retx2_first_slot = []
+        this_db_retx2_delay = []
+        this_db_block_proc_delay = []
         this_db_segment_0_delay = []
         this_db_segment_1_delay = []
         this_db_segment_2_delay = []
+        this_db_segment_3_delay = []
+        this_db_segment_4_delay = []
+        this_db_segment_5_delay = []
         logger.info(f"Extract events for plotting")
         for idx, packet in enumerate(packets):
             print(f"\rProcessing packet {idx + 1}/{len(packets)} ({(idx + 1) / len(packets) * 100:.2f}%) with packet sn: {packet['sn']}", end="")
             this_db_packet_arrival_ts.append((packet['ip.in_t']-begin_ts+prev_end_ts)*1000)
             # add the frame start event
-            this_db_frame_start_ts.append((sched_analyzer.find_frame_start_ts_from_ts(packet['ip.in_t'])-begin_ts+prev_end_ts)*1000)
+            #this_db_frame_start_ts.append((sched_analyzer.find_frame_start_ts_from_ts(packet['ip.in_t'])-begin_ts+prev_end_ts)*1000)
+
+            frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
+                timestamp=packet['ip.in_t'],
+                SCHED_OFFSET_S=scheduling_time_ahead_ms/1000
+            )
+            this_db_slot_num.append(slot_num)
+
             for idx2, rlc_attempt in enumerate(packet['rlc.attempts']):
+
                 if idx2 == 0:
-                    this_db_segment_0_delay.append((rlc_attempt['mac.in_t'] - packet['ip.in_t'])*1000)
+                    #this_db_segment_0_delay.append((rlc_attempt['mac.in_t'] - packet['ip.in_t'])*1000) 
+                    this_db_segment_0_delay.append((rlc_attempt['mac.attempts'][0]['phy.in_t'] - packet['ip.in_t'])*1000)
+                    #this_db_segment_0_delay.append((rlc_attempt['mac.attempts'][0]['phy.in_t'] - packet['ip.in_t'])*1000)
                 elif idx2 == 1:
-                    this_db_segment_1_delay.append((rlc_attempt['mac.in_t'] - packet['rlc.attempts'][0]['mac.in_t'])*1000)
+                    #this_db_segment_1_delay.append((rlc_attempt['mac.in_t'] - packet['rlc.attempts'][0]['mac.in_t'])*1000)
+                    this_db_segment_1_delay.append((rlc_attempt['mac.attempts'][0]['phy.in_t'] - packet['rlc.attempts'][0]['mac.attempts'][0]['phy.in_t'])*1000)
+                    #this_db_segment_1_delay.append((rlc_attempt['mac.attempts'][0]['phy.decode_t'] - packet['rlc.attempts'][0]['mac.attempts'][0]['phy.decode_t'])*1000)
                 elif idx2 == 2:
-                    this_db_segment_2_delay.append((rlc_attempt['mac.in_t'] - packet['rlc.attempts'][1]['mac.in_t'])*1000)
+                    #this_db_segment_2_delay.append((rlc_attempt['mac.in_t'] - packet['rlc.attempts'][1]['mac.in_t'])*1000)
+                    this_db_segment_2_delay.append((rlc_attempt['mac.attempts'][0]['phy.in_t'] - packet['rlc.attempts'][1]['mac.attempts'][0]['phy.in_t'])*1000)
+                    #this_db_segment_2_delay.append((rlc_attempt['mac.attempts'][0]['phy.decode_t'] - packet['rlc.attempts'][1]['mac.attempts'][0]['phy.decode_t'])*1000)
+                elif idx2 == 3:
+                    #this_db_segment_3_delay.append((rlc_attempt['mac.in_t'] - packet['rlc.attempts'][1]['mac.in_t'])*1000)
+                    this_db_segment_3_delay.append((rlc_attempt['mac.attempts'][0]['phy.in_t'] - packet['rlc.attempts'][2]['mac.attempts'][0]['phy.in_t'])*1000)
+                    #this_db_segment_3_delay.append((rlc_attempt['mac.attempts'][0]['phy.decode_t'] - packet['rlc.attempts'][1]['mac.attempts'][0]['phy.decode_t'])*1000)
+                elif idx2 == 4:
+                    #this_db_segment_4_delay.append((rlc_attempt['mac.in_t'] - packet['rlc.attempts'][1]['mac.in_t'])*1000)
+                    this_db_segment_4_delay.append((rlc_attempt['mac.attempts'][0]['phy.in_t'] - packet['rlc.attempts'][3]['mac.attempts'][0]['phy.in_t'])*1000)
+                    #this_db_segment_4_delay.append((rlc_attempt['mac.attempts'][0]['phy.decode_t'] - packet['rlc.attempts'][1]['mac.attempts'][0]['phy.decode_t'])*1000)
+                elif idx2 == 5:
+                    #this_db_segment_5_delay.append((rlc_attempt['mac.in_t'] - packet['rlc.attempts'][1]['mac.in_t'])*1000)
+                    this_db_segment_5_delay.append((rlc_attempt['mac.attempts'][0]['phy.in_t'] - packet['rlc.attempts'][4]['mac.attempts'][0]['phy.in_t'])*1000)
+                    #this_db_segment_5_delay.append((rlc_attempt['mac.attempts'][0]['phy.decode_t'] - packet['rlc.attempts'][1]['mac.attempts'][0]['phy.decode_t'])*1000)
+
+                for mac_attempt in rlc_attempt['mac.attempts']:
+                    if mac_attempt['phy.decode_t'] is not None:
+                        this_db_block_proc_delay.append((mac_attempt['phy.decode_t'] - mac_attempt['phy.in_t'])*1000)
+
+                if len(rlc_attempt['mac.attempts']) > 1:
+                    frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
+                        timestamp=rlc_attempt['mac.attempts'][0]['phy.in_t'],
+                        SCHED_OFFSET_S=scheduling_time_ahead_ms/1000
+                    )
+                    this_db_retx_first_slot.append(slot_num)
+                    this_db_retx_delay.append((rlc_attempt['mac.attempts'][1]['phy.in_t'] - rlc_attempt['mac.attempts'][0]['phy.in_t'])*1000)
+                
+                if len(rlc_attempt['mac.attempts']) > 2:
+                    frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
+                        timestamp=rlc_attempt['mac.attempts'][1]['phy.in_t'],
+                        SCHED_OFFSET_S=scheduling_time_ahead_ms/1000
+                    )
+                    this_db_retx2_first_slot.append(slot_num)
+                    this_db_retx2_delay.append((rlc_attempt['mac.attempts'][2]['phy.in_t'] - rlc_attempt['mac.attempts'][1]['phy.in_t'])*1000)
+
         print("\n", end="")
 
         # segments delay lists
         segment_0_delay_list = np.concatenate((segment_0_delay_list,np.array(this_db_segment_0_delay)))
         segment_1_delay_list = np.concatenate((segment_1_delay_list,np.array(this_db_segment_1_delay)))
         segment_2_delay_list = np.concatenate((segment_2_delay_list,np.array(this_db_segment_2_delay)))
-        frame_start_ts_list = np.concatenate((frame_start_ts_list,np.array(this_db_frame_start_ts)))
+        segment_3_delay_list = np.concatenate((segment_3_delay_list,np.array(this_db_segment_3_delay)))
+        segment_4_delay_list = np.concatenate((segment_4_delay_list,np.array(this_db_segment_4_delay)))
+        segment_5_delay_list = np.concatenate((segment_5_delay_list,np.array(this_db_segment_5_delay)))
+
+        # block processing time list
+        block_proc_delay_list = np.concatenate((block_proc_delay_list, np.array(this_db_block_proc_delay)))
+
+        # retx first slot list
+        # retx delay list
+        retx_first_slot_list = np.concatenate((retx_first_slot_list,np.array(this_db_retx_first_slot)))
+        retx_delay_list = np.concatenate((retx_delay_list,np.array(this_db_retx_delay)))
+        retx2_first_slot_list = np.concatenate((retx2_first_slot_list,np.array(this_db_retx2_first_slot)))
+        retx2_delay_list = np.concatenate((retx2_delay_list,np.array(this_db_retx2_delay)))
+
+        #frame_start_ts_list = np.concatenate((frame_start_ts_list,np.array(this_db_frame_start_ts)))
+        slot_num_list = np.concatenate((slot_num_list,np.array(this_db_slot_num)))
         packet_arrival_ts_list = np.concatenate((packet_arrival_ts_list,np.array(this_db_packet_arrival_ts)))
 
         prev_end_ts = (end_ts-begin_ts) + prev_end_ts                              
 
     # Create a subplot figure with 2 rows
-    fig = make_subplots(rows=5, cols=1, subplot_titles=('Segment 0 histogram', 'Segment 1 histogram', 'Segment 2 histogram', 'Segment 0 time series', 'Frame start packet arrival offset'))
+    fig = make_subplots(rows=5, cols=1, subplot_titles=('Segment 0 histogram', 'Segment 1 histogram', 'Segment 2 histogram', 'Segment 3 time series', 'Segment 4 time series'))
 
     # Plot PDFs
     fig.add_trace(go.Histogram(x=segment_0_delay_list, histnorm='probability density', name='Segment 0 PDF'), row=1, col=1)
     fig.add_trace(go.Histogram(x=segment_1_delay_list, histnorm='probability density', name='Segment 1 PDF'), row=2, col=1)
     fig.add_trace(go.Histogram(x=segment_2_delay_list, histnorm='probability density', name='Segment 2 PDF'), row=3, col=1)
-
-    # plot time series of segment_0_delay_list against packet_arrival_ts_list
-    fig.add_trace(go.Scatter(x=packet_arrival_ts_list, y=segment_0_delay_list, mode='lines+markers', name='Segment 0 delay', marker=dict(symbol='circle')), row=4, col=1)
-
-    # plot time series of segment_0_delay_list against packet_arrival_ts_list
-    fig.add_trace(go.Scatter(x=packet_arrival_ts_list, y=(packet_arrival_ts_list-frame_start_ts_list), mode='lines+markers', name='Time offset', marker=dict(symbol='circle')), row=5, col=1)
+    fig.add_trace(go.Histogram(x=segment_3_delay_list, histnorm='probability density', name='Segment 3 PDF'), row=4, col=1)
+    fig.add_trace(go.Histogram(x=segment_4_delay_list, histnorm='probability density', name='Segment 4 PDF'), row=5, col=1)
+    #fig.add_trace(go.Histogram(x=segment_5_delay_list, histnorm='probability density', name='Segment 5 PDF'), row=3, col=1)
 
     fig.update_layout(
         title='Link and Scheduling Data Plots',
@@ -438,7 +512,48 @@ def plot_scheduling_interarrival_data(args):
     fig.update_yaxes(title_text='Delay [ms]', row=4, col=1)
     fig.update_xaxes(title_text='Time [ms]', row=5, col=1)
     fig.update_yaxes(title_text='Delay [ms]', row=5, col=1)
-    fig.write_html(str(results_folder_addr / 'interarrival_dist_plot.html'))
+    fig.write_html(str(results_folder_addr / 'seg_interarrival_dist_plot.html'))
+
+
+    fig = make_subplots(rows=2, cols=1, subplot_titles=('Segment 0 time series', 'Packet arrival offset'))
+
+    # plot time series of segment_0_delay_list against packet_arrival_ts_list
+    fig.add_trace(go.Scatter(x=packet_arrival_ts_list, y=segment_0_delay_list, mode='lines+markers', name='Segment 0 delay', marker=dict(symbol='circle')), row=1, col=1)
+
+    # plot time series of segment_0_delay_list against packet_arrival_ts_list
+    #fig.add_trace(go.Scatter(x=packet_arrival_ts_list, y=(packet_arrival_ts_list-frame_start_ts_list), mode='lines+markers', name='Time offset', marker=dict(symbol='circle')), row=5, col=1)
+    fig.add_trace(go.Scatter(x=packet_arrival_ts_list, y=slot_num_list, mode='lines+markers', name='Time offset', marker=dict(symbol='circle')), row=2, col=1)
+
+    fig.update_layout(
+        title='Link and Scheduling Data Plots',
+        xaxis_title='Time [ms]',
+        yaxis_title='Values',
+        legend_title='Legend',
+    )
+    fig.update_xaxes(title_text='Time [ms]', row=1, col=1)
+    fig.update_yaxes(title_text='Values', row=1, col=1)
+    fig.update_xaxes(title_text='Time [ms]', row=2, col=1)
+    fig.update_yaxes(title_text='Values', row=2, col=1)
+    fig.write_html(str(results_folder_addr / 'seg0_timeseries_plot.html'))
+
+
+    fig = make_subplots(rows=1, cols=1, subplot_titles=('Processing delay histogram'))
+    fig.add_trace(go.Histogram(x=block_proc_delay_list, histnorm='probability density', name='Processing delay PDF'), row=1, col=1)
+
+    fig.update_layout(
+        title='Link and Scheduling Data Plots',
+        xaxis_title='Time [ms]',
+        yaxis_title='Values',
+        legend_title='Legend',
+    )
+    fig.update_xaxes(title_text='Time [ms]', row=1, col=1)
+    fig.update_yaxes(title_text='Values', row=1, col=1)
+    fig.write_html(str(results_folder_addr / 'delays_dist_plot.html'))
+
+    fig = make_subplots(rows=2, cols=1, subplot_titles=('Delay retx histogram', 'Delay retx 2 histogram'))
+    fig.add_trace(go.Scatter(x=retx_first_slot_list, y=retx_delay_list, mode='markers', name='Retx delay', marker=dict(symbol='circle')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=retx2_first_slot_list, y=retx2_delay_list, mode='markers', name='Retx 2 delay', marker=dict(symbol='circle')), row=2, col=1)
+    fig.write_html(str(results_folder_addr / 'retx_plot.html'))
 
     
 def create_training_dataset(args):
