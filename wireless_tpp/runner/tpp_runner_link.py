@@ -14,7 +14,7 @@ class TPPRunnerLinkQuality():
     """Standard TPP runner
     """
 
-    def __init__(self, runner_config, unique_model_dir=False, **kwargs):
+    def __init__(self, runner_config, unique_model_dir=False,  **kwargs):
         """Initialize the runner.
 
         Args:
@@ -43,27 +43,21 @@ class TPPRunnerLinkQuality():
             **kwargs
         )
 
-        # needed for transformation of the data
-        mean_inter_time, std_inter_time, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype, mcs_mean_inter_time, mcs_std_inter_time, mcs_mean_event_type, mcs_std_event_type, mcs_min_dt, mcs_max_dt, mcs_min_eventtype, mcs_max_eventtype, = (
-            self._data_loader.train_loader().dataset.get_dt_stats(mcs_events=data_config.data_specs.mcs_events, num_event_types_no_mcs=data_config.data_specs.num_event_types_no_mcs)
+        # just for the sake of reporting in logs
+        mean_dtime, std_dtime, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
+            self._data_loader.train_loader().dataset.get_stats(inp_type='time_delta_seqs', mcs_or_segment=False)
         )
-        runner_config.model_config.set("mean_inter_time", mean_inter_time)
-        runner_config.model_config.set("std_inter_time", std_inter_time)
-        runner_config.model_config.set("mean_log_inter_time", np.log(mean_inter_time+self.eps))
-        runner_config.model_config.set("std_log_inter_time", np.log(std_inter_time+self.eps))
-        runner_config.model_config.set("mean_event_type", mean_event_type)
-        runner_config.model_config.set("std_event_type", std_event_type)
-        runner_config.model_config.set("mean_log_event_type", np.log(mean_event_type+self.eps))
-        runner_config.model_config.set("std_log_event_type", np.log(std_event_type+self.eps))
-        runner_config.model_config.set("mcs_mean_inter_time", mcs_mean_inter_time)
-        runner_config.model_config.set("mcs_std_inter_time", mcs_std_inter_time)
-        runner_config.model_config.set("mcs_mean_log_inter_time", np.log(mcs_mean_inter_time+self.eps))
-        runner_config.model_config.set("mcs_std_log_inter_time", np.log(mcs_std_inter_time+self.eps))
-        runner_config.model_config.set("mcs_mean_event_type", mcs_mean_event_type)
-        runner_config.model_config.set("mcs_std_event_type", mcs_std_event_type)
-        runner_config.model_config.set("mcs_mean_log_event_type", np.log(mcs_mean_event_type+self.eps))
-        runner_config.model_config.set("mcs_std_log_event_type", np.log(mcs_std_event_type+self.eps))
-        runner_config.model_config.set("num_event_types_no_mcs", data_config.data_specs.num_event_types_no_mcs)
+        self._data_loader.train_loader().dataset.get_stats(inp_type='num_rbs_seqs', mcs_or_segment=False)
+        self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', mcs_or_segment=False)
+        self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', mcs_or_segment=False)
+        self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', mcs_or_segment=False)
+
+        if not (min_eventtype == max_eventtype and max_eventtype == 0):
+            self._data_loader.train_loader().dataset.get_stats(inp_type='time_delta_seqs', mcs_or_segment=True)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='num_rbs_seqs', mcs_or_segment=True)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', mcs_or_segment=True)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', mcs_or_segment=True)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', mcs_or_segment=True)
 
         self.timer = Timer()
 
@@ -160,6 +154,10 @@ class TPPRunnerLinkQuality():
             test_loader = self._data_loader.test_loader()
 
         logger.info(f'Data \'{self.runner_config.base_config.dataset_id}\' loaded...')
+
+        kwargs.update({
+            'model_is_retx': self.runner_config.model_config.model_specs['model_is_retx']
+        })
 
         timer = self.timer
         timer.start()
@@ -270,8 +268,12 @@ class TPPRunnerLinkQuality():
             valid_loader (EasyTPP.DataLoader): data loader for the valid set.
         """
         test_loader = kwargs.get('test_loader')
+        model_is_retx = kwargs['model_is_retx']
         for i in range(self.runner_config.trainer_config.max_epoch):
-            train_metrics = self.run_one_epoch(train_loader, RunnerPhase.TRAIN)
+            if model_is_retx:
+                train_metrics = self.run_one_epoch_retx(train_loader, RunnerPhase.TRAIN)
+            else:
+                train_metrics = self.run_one_epoch_mcs(train_loader, RunnerPhase.TRAIN)
 
             message = f"[ Epoch {i} (train) ]: train " + MetricsHelper.metrics_dict_to_str(train_metrics)
             logger.info(message)
@@ -280,7 +282,10 @@ class TPPRunnerLinkQuality():
 
             # evaluate model
             if i % self.runner_config.trainer_config.valid_freq == 0:
-                valid_metrics = self.run_one_epoch(valid_loader, RunnerPhase.VALIDATE)
+                if model_is_retx:
+                    valid_metrics = self.run_one_epoch_retx(valid_loader, RunnerPhase.VALIDATE)
+                else:
+                    valid_metrics = self.run_one_epoch_mcs(valid_loader, RunnerPhase.VALIDATE)
 
                 self.model_wrapper.write_summary(i, valid_metrics, RunnerPhase.VALIDATE)
 
@@ -297,7 +302,10 @@ class TPPRunnerLinkQuality():
                     self.model_wrapper.save(self.runner_config.base_config.specs['saved_model_dir'])
 
                 if test_loader is not None:
-                    test_metrics = self.run_one_epoch(test_loader, RunnerPhase.VALIDATE)
+                    if model_is_retx:
+                        test_metrics = self.run_one_epoch_retx(test_loader, RunnerPhase.VALIDATE)
+                    else:
+                        test_metrics = self.run_one_epoch_mcs(test_loader, RunnerPhase.VALIDATE)
 
                     message = f"[ Epoch {i} (test) ]: test " + MetricsHelper.metrics_dict_to_str(test_metrics)
                     logger.info(message)
@@ -359,7 +367,7 @@ class TPPRunnerLinkQuality():
             save_pickle(Path(model_dir) / 'pred.pkl', test_result)
             return
 
-    def run_one_epoch(self, data_loader, phase):
+    def run_one_epoch_mcs(self, data_loader, phase):
         """Run one complete epoch.
 
         Args:
@@ -370,32 +378,44 @@ class TPPRunnerLinkQuality():
             a dict of metrics
         """
         total_loss = 0
-        dtime_loss = 0
-        event_loss = 0
+        total_mcs_error = 0
+        total_mcs_var = 0
         total_num_event = 0
         epoch_label = []
         epoch_pred = []
+        epoch_pred_var = []
         epoch_mask = []
-        pad_index = self.runner_config.data_config.data_specs.pad_token_id
         metrics_dict = OrderedDict()
         if phase in [RunnerPhase.TRAIN, RunnerPhase.VALIDATE]:
             for batch in data_loader:
-                batch_loss, batch_num_event, batch_pred, batch_label, batch_mask = \
-                    self.model_wrapper.run_batch_link_quality(batch, phase=phase)
+                batch_loss, batch_num_event, batch_pred, batch_label, batch_mask, _, _, batch_pred_var = \
+                    self.model_wrapper.run_batch_mcs(batch, phase=phase)
 
                 total_loss += batch_loss
                 total_num_event += batch_num_event
-                epoch_pred.append(batch_pred)
-                epoch_label.append(batch_label)
-                epoch_mask.append(batch_mask)
+                if phase == RunnerPhase.VALIDATE:
+                    batch_mask_int = np.array(batch_mask,dtype=int)
+                    total_mcs_error += sum(np.multiply(np.array(abs(batch_label[0] - batch_pred[0])),batch_mask_int))
+                    total_mcs_var += sum(np.multiply(np.array(batch_pred_var[0]),batch_mask_int))
+                    epoch_pred.append(batch_pred)
+                    epoch_pred_var.append(batch_pred_var)
+                    epoch_label.append(batch_label)
+                    epoch_mask.append(batch_mask)
 
+            # calc loss
             avg_loss = total_loss / total_num_event
-
             metrics_dict.update({'loglike': -avg_loss, 'num_events': total_num_event})
+
+            # calc errors
+            if phase == RunnerPhase.VALIDATE:
+                avg_mcs_error = total_mcs_error / total_num_event
+                avg_mcs_var = total_mcs_var / total_num_event
+                metrics_dict.update({'dtime_mae': avg_mcs_error, 'mcs_var': avg_mcs_var})
+
 
         else:
             for batch in data_loader:
-                batch_pred, ll_dtime, ll_type, batch_num_event, batch_label = self.model_wrapper.run_batch_link_quality(batch, phase=phase)
+                batch_pred, ll_dtime, ll_type, batch_num_event, batch_label = self.model_wrapper.run_batch_mcs(batch, phase=phase)
                 total_loss += (ll_dtime+ll_type)
                 dtime_loss += ll_dtime
                 event_loss += ll_type
@@ -448,6 +468,121 @@ class TPPRunnerLinkQuality():
 
         return metrics_dict
     
+
+    def run_one_epoch_retx(self, data_loader, phase):
+        """Run one complete epoch.
+
+        Args:
+            data_loader: data loader object defined in model runner
+            phase: enum, [train, dev, test]
+
+        Returns:
+            a dict of metrics
+        """
+        total_loss = 0
+        total_mretx_loss = 0
+        total_rfailed_loss = 0
+        total_mretx_error = 0
+        total_rfailed_error = 0
+        total_num_event = 0
+        total_mretx_var = 0
+        total_rfailed_var = 0
+        epoch_label = []
+        epoch_pred = []
+        epoch_pred_var = []
+        epoch_mask = []
+        pad_index = self.runner_config.data_config.data_specs.pad_token_id
+        metrics_dict = OrderedDict()
+        if phase in [RunnerPhase.TRAIN, RunnerPhase.VALIDATE]:
+            for batch in data_loader:
+                batch_loss, batch_num_event, batch_pred, batch_label, batch_mask, m_mretx_loss, m_rfailed_loss, batch_pred_var = \
+                    self.model_wrapper.run_batch_retx(batch, phase=phase)
+
+                total_loss += batch_loss
+                total_mretx_loss += m_mretx_loss
+                total_rfailed_loss += m_rfailed_loss
+                total_num_event += batch_num_event
+                if phase == RunnerPhase.VALIDATE:
+                    batch_mask_int = np.array(batch_mask,dtype=int)
+                    total_mretx_error += sum(np.multiply(np.array(abs(batch_label[0] - batch_pred[0])),batch_mask_int))
+                    total_rfailed_error += sum(np.multiply(np.array(abs(batch_label[1] - batch_pred[1])),batch_mask_int))
+                    total_mretx_var += sum(np.multiply(np.array(batch_pred_var[0]),batch_mask_int))
+                    total_rfailed_var += sum(np.multiply(np.array(batch_pred_var[1]),batch_mask_int))
+                    epoch_pred.append(batch_pred)
+                    epoch_pred_var.append(batch_pred_var)
+                    epoch_label.append(batch_label)
+                    epoch_mask.append(batch_mask)
+
+            # calc loss
+            avg_loss = total_loss / total_num_event
+            avg_mretx_loss = total_mretx_loss / total_num_event
+            avg_rfailed_loss = total_rfailed_loss / total_num_event
+            metrics_dict.update({'loglike': -avg_loss, 'num_events': total_num_event, 'mretx_loglike': -avg_mretx_loss, 'rfailed_loglike': -avg_rfailed_loss})
+
+            # calc errors
+            if phase == RunnerPhase.VALIDATE:
+                avg_mretx_error = total_mretx_error / total_num_event
+                avg_rfailed_error = total_rfailed_error / total_num_event
+                avg_mretx_var = total_mretx_var / total_num_event
+                avg_rfailed_var = total_rfailed_var / total_num_event
+                metrics_dict.update({'mretx_mae': avg_mretx_error, 'rfailed_mae': avg_rfailed_error, 'mretx_var': avg_mretx_var, 'rfailed_var': avg_rfailed_var})
+
+        else:
+            for batch in data_loader:
+                batch_pred, ll_dtime, ll_type, batch_num_event, batch_label = self.model_wrapper.run_batch_retx(batch, phase=phase)
+                total_loss += (ll_dtime+ll_type)
+                dtime_loss += ll_dtime
+                event_loss += ll_type
+                total_num_event += batch_num_event
+                epoch_pred.append(batch_pred)
+                epoch_label.append(batch_label)
+
+            avg_total_ll = total_loss / total_num_event
+            avg_dtime_ll = dtime_loss / total_num_event
+            avg_event_ll = event_loss / total_num_event
+
+            metrics_dict.update({'total_ll': avg_total_ll, 'dtime_ll':avg_dtime_ll, 'event_type_ll':avg_event_ll, 'num_events': total_num_event})
+
+        # we need to improve the code here
+        # classify batch_output to list
+        #pred_exists, label_exists = False, False
+        #if epoch_pred[0][0] is not None:
+        #    epoch_pred = concat_element(epoch_pred, pad_index)
+        #    pred_exists = True
+        #if len(epoch_label) > 0 and epoch_label[0][0] is not None:
+        #    epoch_label = concat_element(epoch_label, pad_index)
+        #    label_exists = True
+        #    if len(epoch_mask):
+        #        epoch_mask = concat_element(epoch_mask, False)[0]  # retrieve the first element of concat array
+        #        epoch_mask = epoch_mask.astype(bool)
+        #if pred_exists and label_exists:
+        #    metrics_dict.update(self.metric_functions(epoch_pred, epoch_label, seq_mask=epoch_mask))
+
+        if phase not in [RunnerPhase.TRAIN, RunnerPhase.VALIDATE]:
+            if self.runner_config.base_config.model_id == 'IntensityFree':
+                metrics_dict.update(
+                    {
+                        'rmse_dtime' : rmse_dtime_metric_function(epoch_pred, epoch_label),
+                        'rmse_event' : rmse_event_metric_function(epoch_pred, epoch_label),
+                    }
+                )
+            elif self.runner_config.base_config.model_id == 'IntensityFree2D':
+                metrics_dict.update(
+                    {
+                        'rmse_2d' : rmse_2d_metric_function(epoch_pred, epoch_label),
+                        'rmse_2d_dtime' : rmse_2d_dtime_metric_function(epoch_pred, epoch_label),
+                        'rmse_2d_event' : rmse_2d_event_metric_function(epoch_pred, epoch_label),
+                    }
+                )
+            else:
+                metrics_dict.update(self.metric_functions(epoch_pred, epoch_label, seq_mask=epoch_mask))
+
+        if phase == RunnerPhase.PREDICT:
+            metrics_dict.update({'pred': epoch_pred, 'label': epoch_label})
+
+        return metrics_dict
+
+
     def run_one_epoch_probability_generation(self, data_loader, phase):
         """Run one complete epoch and store the intensity values.
 
@@ -461,17 +596,19 @@ class TPPRunnerLinkQuality():
 
         probs_pred = []
         epoch_label = []
+        masks = []
         metrics_dict = OrderedDict()
         if phase is not RunnerPhase.PREDICT:
             return
         
         for batch in data_loader:
-            batch_probs, batch_label = self.model_wrapper.run_batch_probability_generation_link_quality(batch, phase=phase)
+            batch_probs, batch_label, batch_mask = self.model_wrapper.run_batch_probability_generation_mcs(batch, phase=phase)
             probs_pred.append(batch_probs)
             epoch_label.append(batch_label)
+            masks.append(batch_mask)
 
         if phase == RunnerPhase.PREDICT:
-            metrics_dict.update({'pred': probs_pred, 'label': epoch_label})
+            metrics_dict.update({'pred': probs_pred, 'label': epoch_label, 'mask': masks})
 
         return metrics_dict
     
@@ -488,17 +625,19 @@ class TPPRunnerLinkQuality():
 
         samples_pred = []
         epoch_label = []
+        masks = []
         metrics_dict = OrderedDict()
         if phase is not RunnerPhase.PREDICT:
             return
         
         for batch in data_loader:
-            batch_samples, batch_label = self.model_wrapper.run_batch_sample_generation_link_quality(batch, phase=phase)
+            batch_samples, batch_label, batch_mask = self.model_wrapper.run_batch_sample_generation_mcs(batch, phase=phase)
             samples_pred.append(batch_samples)
             epoch_label.append(batch_label)
+            masks.append(batch_mask)
 
         if phase == RunnerPhase.PREDICT:
-            metrics_dict.update({'pred': samples_pred, 'label': epoch_label})
+            metrics_dict.update({'pred': samples_pred, 'label': epoch_label, 'mask': masks})
 
         return metrics_dict
     

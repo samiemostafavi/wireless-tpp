@@ -45,6 +45,7 @@ def main():
     sub_parser.add_argument("-i", "--id", help="Specify the training id")
     sub_parser.add_argument("-m", "--segment", help="Specify the segment number to plot")
     sub_parser.add_argument("-p", "--predict", choices=["probabilistic","sampling"],help="Specify the prediction method")
+    sub_parser.add_argument("-k", "--notypemapping", action="store_true", help="Specify if in arrival create dataset, no type mapping should be done")
     final_args = sub_parser.parse_args(remaining_args)
 
     if args.task == "link_quality":

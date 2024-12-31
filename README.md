@@ -95,19 +95,20 @@ python main.py -t scheduling -u plot_data -s data/s63_results -c config/dataset_
 python main.py -t scheduling -u plot_data -v -s data/s63_results -c config/dataset_config.json -g s63_scheduling -n test0
 ```
 
-Create the dataset (packet arrival)
+Create the dataset (packet arrival) Use `-k` to avoid event type to length mapping.
 ```
-python main.py -t packet_arrival -u create_training_dataset -s data/s63_results -c config/dataset_config.json -g s63_arrival -n test0
+python main.py -t packet_arrival -u create_training_dataset -s data/s63_results -c config/dataset_config.json -g s63_arrival -n test0 -k
 ```
 
-Create the dataset (link quality retransmissions)
+Create the dataset (link quality retx)
 ```
-python main.py -t link_quality -u create_training_dataset -s data/s63_results -c config/dataset_config.json -g s63_link_retx -n test0
+python main.py -t link_quality -u create_training_dataset -s data/s63_results -c config/dataset_config.json -g s63_retx -n retx0
 ```
 
 Create the dataset (link quality mcs)
 ```
-python main.py -t link_quality -u create_training_dataset -s data/s61-64_results -c config/dataset_config.json -g s61-64_link_mcs -n test0
+python main.py -t link_quality -u create_training_dataset -s data/s61-64_results -c config/dataset_config.json -g s61-64_mcs -n mcs0
+python main.py -t link_quality -u create_training_dataset -s data/s63_results -c config/dataset_config.json -g s63_mcs -n mcs0
 ```
 
 Create the dataset (scheduling)
@@ -128,6 +129,8 @@ python main.py -t packet_arrival -u train_model -f -c config/training_config.yam
 Train a model (link quality)
 ```
 python main.py -t link_quality -u train_model -f -c config/training_config.yaml -i THP_train_s63_linkquality_0
+python main.py -t link_quality -u train_model -f -c config/training_config.yaml -i MCS_s63_0
+python main.py -t link_quality -u train_model -f -c config/training_config.yaml -i RETX_s63_0
 ```
 
 Train a model (scheduling)
@@ -152,18 +155,6 @@ python main.py -t packet_arrival -u generate_predictions -s data/s63_results -p 
 python main.py -t packet_arrival -u plot_predictions -s data/s63_results -n test0 -i 1119416_139811246588544_241203-084053
 ```
 
-Validate retx link quality model (probabilistic)
-```
-python main.py -t link_quality -u generate_predictions -s data/s63_results -p probabilistic -c config/prediction_config.json -g s63_linkquality -n test0 -i 1106489_139985643180672_241202-123840
-python main.py -t link_quality -u plot_predictions -s data/s63_results -n test0 -i 1121178_140591209673344_241203-091730
-```
-
-Validate retx link quality model (sampling)
-```
-python main.py -t link_quality -u generate_predictions -s data/s63_results -p sampling -c config/prediction_config.json -g s63_linkquality -n test0 -i 1106489_139985643180672_241202-123840
-python main.py -t link_quality -u plot_predictions -s data/s63_results -n test0 -i 1122926_140662824829568_241203-102211
-```
-
 Validate the scheduling model (probabilistic)
 ```
 python main.py -t scheduling -u generate_predictions -s data/s63_results -p probabilistic -c config/prediction_config.json -g s63_scheduling -n test0 -i 1112063_140079729623680_241202-162330
@@ -179,6 +170,20 @@ python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i
 python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1126371_140091332403840_241203-121033 -m 2
 python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1126371_140091332403840_241203-121033 -m 3
 ```
+
+Validate mcs model (probabilistic)
+```
+python main.py -t link_quality -u generate_predictions -s data/s63_results -p probabilistic -c config/prediction_config.json -g s63_mcs -n mcs0 -i 1106489_139985643180672_241202-123840
+python main.py -t link_quality -u plot_predictions -s data/s63_results -n mcs0 -i 1121178_140591209673344_241203-091730
+```
+
+Validate mcs model (sampling)
+```
+python main.py -t link_quality -u generate_predictions -s data/s63_results -p sampling -c config/prediction_config.json -g s63_mcs -n mcs0 -i 1106489_139985643180672_241202-123840
+python main.py -t link_quality -u plot_predictions -s data/s63_results -n mcs0 -i 1122926_140662824829568_241203-102211
+```
+
+
 
 ### Step 4. Validate packet delay prediction
 

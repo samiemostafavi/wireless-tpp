@@ -34,21 +34,16 @@ class TorchBaseModel(nn.Module):
         pass
 
     @abstractmethod
-    def generate_samples_one_step_since_last_event(self, batch, prediction_config, forward=False):
+    def generate_samples(self, batch, prediction_config, forward=False):
         pass
 
     @abstractmethod
-    def predict_probabilities_one_step_since_last_event(self, batch, prediction_config, forward=False):
+    def predict_probabilities(self, batch, prediction_config, forward=False):
         pass
 
     @abstractmethod
-    def predict_multi_step_since_last_event(self, batch, prediction_config, forward=False):
+    def predict_mean_variance(self, batch, prediction_config, forward=False):
         pass
-
-    @abstractmethod
-    def predict_one_step_at_every_event(self, batch, prediction_config, forward=False):
-        pass
-
 
     @staticmethod
     def generate_model_from_config(model_config):

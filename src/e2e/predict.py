@@ -11,7 +11,7 @@ from wireless_tpp.utils import logger
 from edaf.core.uplink.analyze_packet import ULPacketAnalyzer
 from edaf.core.uplink.analyze_scheduling import ULSchedulingAnalyzer
 
-from src.link_quality import extract_link_quality_events
+from src.link_quality import extract_link_quality_events_stream_based
 from src.packet_arrival import extract_packet_arrival_events
 from src.scheduling import extract_scheduling_events
 

@@ -114,96 +114,101 @@ def plot_predictions(args):
     with open(pkl_file, 'rb') as file:
         data = pickle.load(file)
 
+    mcs_eval_interval_ms = 100
     model_id = generation_output_config['base_config']['model_id']
-    if model_id == 'IntensityFreeLinkQuality' and generation_output_config['prediction_config']['method'] == 'probabilistic':
-        plot_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
-    elif model_id == 'THPLinkQuality' and generation_output_config['prediction_config']['method'] == 'probabilistic':
-        plot_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
-    elif model_id == 'THPLinkQuality' and generation_output_config['prediction_config']['method'] == 'sampling':
-        plot_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
+    if generation_output_config['prediction_config']['method'] == 'probabilistic':
+        plot_mcs_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
+    elif generation_output_config['prediction_config']['method'] == 'sampling':
+        plot_mcs_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, mcs_eval_interval_ms, args)
 
 
-def plot_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, args):
+def plot_mcs_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args):
 
-    includes_mcs = False
-    if generation_output_config['model_config']['model_specs']['includes_mcs']:
-        includes_mcs = True
-
-    # plot history
-    history_dtime_data = []
-    history_event_type_data = []
+    # history data
+    h_dtime, h_time, h_event_type, h_mcs, h_mretx, h_rfailed, h_num_rbs = [],[],[],[],[],[],[]
     history_mcs_data = []
     for batch in data['label']:
-        history_dtime_data.append(batch[0])
-        history_event_type_data.append(batch[1])
-        if includes_mcs:
-            history_mcs_data.append(batch[2])
+        h_dtime.append(batch[0])
+        h_time.append(batch[1])
+        h_event_type.append(batch[2])
+        h_mcs.append(batch[3])
+        h_mretx.append(batch[4])
+        h_rfailed.append(batch[5])
+        h_num_rbs.append(batch[6])
 
-    concatenated_history_dtime = np.concatenate(history_dtime_data, axis=0)
-    concatenated_history_event_type = np.concatenate(history_event_type_data, axis=0)
-    if includes_mcs:
-        concatenated_history_mcs = np.concatenate(history_mcs_data, axis=0)
+    ch_dtime = np.concatenate(h_dtime, axis=0)
+    ch_time = np.concatenate(h_time, axis=0)
+    ch_event_type = np.concatenate(h_event_type, axis=0)
+    ch_mcs = np.concatenate(h_mcs, axis=0)
+    ch_mretx = np.concatenate(h_mretx, axis=0)
+    ch_rfailed = np.concatenate(h_rfailed, axis=0)
+    ch_num_rbs = np.concatenate(h_num_rbs, axis=0)
 
-    dtime_data = []
-    event_type_data = []
+    # data['pred'] dimensions: [num batches, 1 , batch size, num probability samples]
+    p_mcs = []
     for batch in data['pred']:
-        dtime_data.append(batch[0])
-        event_type_data.append(batch[1])
-    concatenated_label_dtime = np.concatenate(dtime_data, axis=0)
-    concatenated_label_event_type = np.concatenate(event_type_data, axis=0)
+        p_mcs.append(batch[0])
+    cp_mcs = np.concatenate(p_mcs, axis=0)
 
-    max_index = concatenated_label_dtime.shape[0]
+    # Here history data dimensions are: [total number of samples, seq length]
+    # and prediction data dimensions are: [total number of samples, num probability samples]
+    # total number of samples is the sum of all batch sizes
+
+    # lets pick a sample and plot
+    max_index = ch_dtime.shape[0]
+
     ar_index = np.random.randint(0, max_index, size=1)[0]
     assert ar_index < max_index, f"Index out of range: {ar_index} > {max_index}"
-    dtime_pred = concatenated_label_dtime[ar_index,0]
-    event_type_pred = concatenated_label_event_type[ar_index,0]
 
-    history_dtime = concatenated_history_dtime[ar_index,:]
-    history_time = np.cumsum(history_dtime)
-    history_event_type = concatenated_history_event_type[ar_index,:]
-    if includes_mcs:
-        history_mcs = concatenated_history_mcs[ar_index,:]
+    # [seq length]
+    ch_dtime = ch_dtime[ar_index,:]
+    ch_time = ch_time[ar_index,:]
+    ch_event_type = ch_event_type[ar_index,:]
+    ch_mcs = ch_mcs[ar_index,:]
+    ch_mretx = ch_mretx[ar_index,:]
+    ch_rfailed = ch_rfailed[ar_index,:]
+    ch_num_rbs = ch_num_rbs[ar_index,:]
 
+    #logger.info(f"Event types in the history plus the label: {ch_event_type}")
 
-    # Create a subplot with 2 rows and 1 column
-    if includes_mcs:
-        fig = make_subplots(rows=2, cols=1, subplot_titles=("Predictions", "History MCS"))
-    else:
-        fig = make_subplots(rows=1, cols=1, subplot_titles=("Predictions"))
+    # [num probability samples]
+    cp_mcs = np.exp(cp_mcs[ar_index,:])
 
+    # history mcs event time series
+    mcsevent_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 1])
+    mcsevent_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 1])
 
-    # Add the scatter plot for predictions to the first row
-    fig.add_trace(
-        go.Scatter(x=history_time[:-1], y=history_event_type[:-1], mode='markers', name='labels'),
-        row=1, col=1
-    )
+    # history segments time series
+    segment_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    segment_rfailed_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    segment_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    segment_num_rbs_list = np.array([ch_num_rbs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    segment_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
 
-    fig.add_trace(
-        go.Scatter(x=[history_time[-1]], y=[history_event_type[-1]], mode='markers', name='labels'),
-        row=1, col=1
-    )
+    # Create a subplot figure with 1 row
+    fig = make_subplots(rows=2, cols=1, subplot_titles=("Predictions"))
 
-    fig.add_trace(
-        go.Scatter(x=[history_time[-1]+dtime_pred], y=[event_type_pred], mode='markers', name='predictions'),
-        row=1, col=1
-    )
+    # history mcs events
+    fig.add_trace(go.Scatter(x=mcsevent_ts_list[:-1], y=np.ones(len(mcsevent_ts_list)), mode='markers+text', name='MCS event (history)', marker=dict(symbol='square'), text=[f"{x}" for x in mcsevent_mcs_list[:-1]], textposition='top center', showlegend=True), row=1, col=1)
 
-    if includes_mcs:
-        # Add the scatter plot for history MCS to the second row
-        fig.add_trace(
-            go.Scatter(x=np.arange(len(history_mcs)), y=history_mcs, mode='lines+markers', name='History MCS'),
-            row=3, col=1
-        )
+    # history block events
+    fig.add_trace(go.Scatter(x=segment_ts_list, y=np.ones(len(segment_ts_list)), mode='markers+text', name='Block event (history)', marker=dict(symbol='circle'), text=[f"{x},{y}" for x, y in zip(segment_mrtx_list, segment_rfailed_list)], textposition='top center', showlegend=False), row=1, col=1)
+    fig.add_trace(go.Scatter(x=segment_ts_list, y=np.ones(len(segment_ts_list)), mode='markers+text', name='Block event (history)', marker=dict(symbol='circle'), text=segment_num_rbs_list, textposition='bottom center'), row=1, col=1)
 
-    # Update layout for better aesthetics
+    # label mcs event
+    fig.add_trace(go.Scatter(x=mcsevent_ts_list[-1:], y=np.ones(len(mcsevent_ts_list)), mode='markers+text', name='MCS event (label)', marker=dict(symbol='square'), text=[f"{x}" for x in mcsevent_mcs_list[-1:]], textposition='top center', showlegend=True), row=1, col=1)
+
+    # prediction probabilities
+    fig.add_trace(go.Scatter(x=np.arange(30), y=cp_mcs[0,:], mode='markers', name='Segment length prediction [bytes]'), row=2, col=1)
+
     fig.update_layout(
-        title='Predictions and History',
-        xaxis_title='Time',
-        yaxis_title='Probability'
+        title='MCS Predictor Validation',
+        legend_title='Legend',
     )
 
     # Write the plot to an HTML file
-    fig.write_html(model_path / "pred_sample_dtimes.html")
+    fig.write_html(model_path / "pred_probabilities_mcs.html")
+
 
 def transform_list(input_list, max_period):
     # Initialize an empty list to store the transformed values
@@ -227,168 +232,93 @@ def transform_list(input_list, max_period):
     
     return transformed_list
 
-def plot_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args):
+def plot_mcs_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, mcs_eval_interval_ms, args):
 
-    includes_mcs = False
-    if generation_output_config['model_config']['model_specs']['includes_mcs']:
-        includes_mcs = True
-
-    mcs_events = False
-    if generation_output_config['data_config']['data_specs']['mcs_events']:
-        mcs_events = True
-        num_event_types_no_mcs = generation_output_config['data_config']['data_specs']['num_event_types_no_mcs']
-        min_mcs = generation_output_config['data_config']['data_specs']['min_mcs']
-
-    # plot history
-    history_dtime_data = []
-    history_time_data = []
-    history_event_type_data = []
+    # history data
+    h_dtime, h_time, h_event_type, h_mcs, h_mretx, h_rfailed, h_num_rbs = [],[],[],[],[],[],[]
     history_mcs_data = []
     for batch in data['label']:
-        history_dtime_data.append(batch[0])
-        history_time_data.append(batch[1])
-        history_event_type_data.append(batch[2])
-        if includes_mcs:
-            history_mcs_data.append(batch[3])
+        h_dtime.append(batch[0])
+        h_time.append(batch[1])
+        h_event_type.append(batch[2])
+        h_mcs.append(batch[3])
+        h_mretx.append(batch[4])
+        h_rfailed.append(batch[5])
+        h_num_rbs.append(batch[6])
 
+    ch_dtime = np.concatenate(h_dtime, axis=0)
+    ch_time = np.concatenate(h_time, axis=0)
+    ch_event_type = np.concatenate(h_event_type, axis=0)
+    ch_mcs = np.concatenate(h_mcs, axis=0)
+    ch_mretx = np.concatenate(h_mretx, axis=0)
+    ch_rfailed = np.concatenate(h_rfailed, axis=0)
+    ch_num_rbs = np.concatenate(h_num_rbs, axis=0)
 
-    concatenated_history_dtime = np.concatenate(history_dtime_data, axis=0)
-    concatenated_history_time = np.concatenate(history_time_data, axis=0)
-    concatenated_history_event_type = np.concatenate(history_event_type_data, axis=0)
-    if includes_mcs:
-        concatenated_history_mcs = np.concatenate(history_mcs_data, axis=0)
-
-    dtime_data = []
-    event_type_data = []
+    # data['pred'] dimensions: [num batches, 1 , batch size, num probability samples]
+    p_mcs = []
     for batch in data['pred']:
-        dtime_data.append(batch[0])
-        event_type_data.append(batch[1])
-    concatenated_label_dtime = np.concatenate(dtime_data, axis=0)
-    concatenated_label_event_type = np.concatenate(event_type_data, axis=0)
+        p_mcs.append(batch[0])
+    cp_mcs = np.concatenate(p_mcs, axis=1)
 
-    max_index = concatenated_label_dtime.shape[0]
+    # Here history data dimensions are: [total number of samples, seq length]
+    # and prediction data dimensions are: [total number of samples, num probability samples]
+    # total number of samples is the sum of all batch sizes
+
+    # lets pick a sample and plot
+    max_index = ch_dtime.shape[1]
+
     ar_index = np.random.randint(0, max_index, size=1)[0]
     assert ar_index < max_index, f"Index out of range: {ar_index} > {max_index}"
-    dtime_logprob_pred = concatenated_label_dtime[ar_index,:]
-    dtime_prob_pred = np.exp(dtime_logprob_pred)
 
-    history_dtime = concatenated_history_dtime[ar_index,:]
-    history_time = concatenated_history_time[ar_index,:]
-    history_event_type = concatenated_history_event_type[ar_index,:]
-    if includes_mcs:
-        history_mcs = concatenated_history_mcs[ar_index,:]
+    # [seq length]
+    ch_dtime = ch_dtime[ar_index,:]
+    ch_time = ch_time[ar_index,:]
+    ch_event_type = ch_event_type[ar_index,:]
+    ch_mcs = ch_mcs[ar_index,:]
+    ch_mretx = ch_mretx[ar_index,:]
+    ch_rfailed = ch_rfailed[ar_index,:]
+    ch_num_rbs = ch_num_rbs[ar_index,:]
 
-    # dtime samples
-    prediction_config = generation_output_config['prediction_config']
-    sample_dtime_min = prediction_config['probability_generation']['sample_dtime_min']
-    sample_dtime_max = prediction_config['probability_generation']['sample_dtime_max']
-    num_steps_dtime = prediction_config['probability_generation']['num_steps_dtime']
-    dtime_samples = np.linspace(sample_dtime_min, sample_dtime_max, num_steps_dtime)
+    #logger.info(f"Event types in the history plus the label: {ch_event_type}")
+
+    # [num probability samples]
+    cp_mcs = np.mean(cp_mcs[:,ar_index,0])
+
+    # history mcs event time series
+    mcsevent_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 1])
+    mcsevent_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 1])
+
+    # history segments time series
+    segment_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    segment_rfailed_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    segment_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    segment_num_rbs_list = np.array([ch_num_rbs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    segment_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+
+    # Create a subplot figure with 1 row
+    fig = make_subplots(rows=1, cols=1, subplot_titles=("Predictions"))
+
+    # history mcs events
+    fig.add_trace(go.Scatter(x=mcsevent_ts_list[:-1], y=np.ones(len(mcsevent_ts_list)), mode='markers+text', name='MCS event (history)', marker=dict(symbol='square'), text=[f"{x}" for x in mcsevent_mcs_list[:-1]], textposition='top center', showlegend=True), row=1, col=1)
+
+    # history block events
+    fig.add_trace(go.Scatter(x=segment_ts_list, y=np.ones(len(segment_ts_list)), mode='markers+text', name='Block event (history)', marker=dict(symbol='circle'), text=[f"{x},{y}" for x, y in zip(segment_mrtx_list, segment_rfailed_list)], textposition='top center', showlegend=False), row=1, col=1)
+    fig.add_trace(go.Scatter(x=segment_ts_list, y=np.ones(len(segment_ts_list)), mode='markers+text', name='Block event (history)', marker=dict(symbol='circle'), text=segment_num_rbs_list, textposition='bottom center'), row=1, col=1)
+
+    # label mcs event
+    fig.add_trace(go.Scatter(x=mcsevent_ts_list[-1:], y=np.ones(len(mcsevent_ts_list)), mode='markers+text', name='MCS event (label)', marker=dict(symbol='square'), text=[f"{x}" for x in mcsevent_mcs_list[-1:]], textposition='top center', showlegend=True), row=1, col=1)
+
+    fig.add_trace(
+        go.Scatter(x=[ch_time[-2]+mcs_eval_interval_ms], y=[1], mode='markers+text', name='predictions', text=[cp_mcs], textposition='top center'),
+        row=1, col=1
+    )
+
+    fig.update_layout(
+        title='Scheduling Predictor Validation',
+        xaxis_title='Time [ms]',
+        yaxis_title='Value',
+        legend_title='Legend'
+    )
     
-    # Create a subplot with 2 rows and 1 column
-    if includes_mcs:
-        fig = make_subplots(rows=2, cols=1, subplot_titles=("Predictions", "History MCS"))
-    else:
-        fig = make_subplots(rows=1, cols=1, subplot_titles=("Predictions"), specs=[[{"secondary_y": True}]])
-
-    history_time = transform_list(history_time, 1024*10.0) # 1024 (max_num_frames) * 10ms (20 slots each 0.5 ms) is the max period
-
-    # Add the scatter plot for predictions to the first row
-    if mcs_events:
-        history_event_type = np.where(
-            np.array(history_event_type) >= num_event_types_no_mcs,
-            np.array(history_event_type) + min_mcs - num_event_types_no_mcs,
-            np.array(history_event_type)
-        )
-
-    fig.add_trace(
-        go.Scatter(
-            x=history_time[:-1], 
-            y=np.where(np.array(history_event_type[:-1]) >= num_event_types_no_mcs, num_event_types_no_mcs, np.array(history_event_type[:-1])), 
-            mode='markers+text', 
-            text=np.where(np.array(history_event_type[:-1]) >= num_event_types_no_mcs, np.array(history_event_type[:-1]), ''),
-            textposition='bottom center',
-            name='History events'
-        ),
-        row=1, col=1,
-        secondary_y=False
-    )
-
-    fig.add_trace(
-        go.Scatter(
-            x=[history_time[-1]], 
-            y=np.where(np.array([history_event_type[-1]]) >= num_event_types_no_mcs, num_event_types_no_mcs, np.array([history_event_type[-1]])), 
-            mode='markers+text', 
-            text=np.where(np.array([history_event_type[-1]]) >= num_event_types_no_mcs, np.array([history_event_type[-1]]), ''),
-            textposition='bottom center',
-            name='Label event'
-        ),
-        row=1, col=1,
-        secondary_y=False
-    )
-
-    # Add the scatter plot for predictions to the first row
-    #fig.add_trace(
-    #    go.Scatter(x=history_time, y=np.ones(len(history_dtime)), mode='markers', name='labels'),
-    #    row=2, col=1
-    #)
-
-    fig.add_trace(
-        go.Scatter(x=history_time[-2]+dtime_samples, y=dtime_prob_pred, mode='markers', name='predictions'),
-        row=1, col=1,
-        secondary_y=True
-    )  
-
-    # Add the scatter plot for predictions to the first row
-    #fig.add_trace(
-    #    go.Scatter(x=dtime_samples, y=dtime_prob_pred, mode='markers', name='Predictions'),
-    #    row=1, col=1
-    #)
-
-    if includes_mcs:
-        # Add the scatter plot for history MCS to the second row
-        fig.add_trace(
-            go.Scatter(x=np.arange(len(history_mcs)), y=history_mcs, mode='lines+markers', name='History MCS'),
-            row=2, col=1
-        )
-
-    # Update layout for better aesthetics
-    fig.update_layout(
-        title="Predictions and History",
-        xaxis_title="Time [ms]",
-        yaxis_title="History Events [event type]",
-        yaxis2_title="Prediction Probability"
-    )
-
-    # Write the plot to an HTML file
-    fig.write_html(model_path / "prob_delta_times.html")
-
-    # (951, 999, 15)
-    event_types_length = concatenated_label_event_type.shape[2] # event_types length
-    event_types_probs = np.exp(concatenated_label_event_type[ar_index,0,:]) #FIXME why index 0?
-
-    # Define class labels
-    class_labels = [f"Event type {i}" for i in range(event_types_length)]
-
-    # Create a figure
-    fig = go.Figure()
-
-    # Add traces for each set of probabilities
-    fig.add_trace(
-        go.Bar(
-            x=class_labels,
-            y=event_types_probs,
-            opacity=0.7
-        )
-    )
-    # Update layout for better aesthetics
-    fig.update_layout(
-        title="Probability Distribution Across Classes",
-        xaxis_title="Class Number",
-        yaxis_title="Probability",
-        barmode='group',  # Options: 'group', 'overlay', 'stack'
-        template='plotly_white',
-        legend_title="Probability Sets",
-        xaxis_tickangle=-45
-    )
-    fig.write_html(model_path / "prob_event_types.html")
+    #fig.update_xaxes(matches='x')
+    fig.write_html(model_path / "pred_sample_dtimes.html")

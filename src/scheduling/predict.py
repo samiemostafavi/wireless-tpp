@@ -156,12 +156,12 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
 
     # data['pred'] dimensions: [num batches, 1 , batch size, num probability samples]
     p_dtime = []
-    p_num_rbs = []
+    p_len_bytes = []
     for batch in data['pred']:
         p_dtime.append(batch[0])
-        p_num_rbs.append(batch[1])
-    cp_prob = np.concatenate(p_dtime, axis=0)
-    cp_num_rbs = np.concatenate(p_num_rbs, axis=0)
+        p_len_bytes.append(batch[1])
+    cp_dtime = np.concatenate(p_dtime, axis=0)
+    cp_len_bytes = np.concatenate(p_len_bytes, axis=0)
 
     # Here history data dimensions are: [total number of samples, seq length]
     # and prediction data dimensions are: [total number of samples, num probability samples]
@@ -189,9 +189,9 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     logger.info(f"Event types in the history plus the label: {ch_event_type}")
 
     # [num probability samples]
-    cp_prob = np.exp(cp_prob[ar_index,:])
-    # [1, 107]
-    cp_num_rbs = np.exp(cp_num_rbs[ar_index,:])
+    cp_dtime = np.exp(cp_dtime[ar_index,:])
+    # [num probability samples]
+    cp_len_bytes = np.exp(cp_len_bytes[ar_index,:])
 
 
     # history packets time series
@@ -236,16 +236,20 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     fig.add_trace(go.Scatter(x=segment_ts_list[-1:], y=np.ones(len(segment_ts_list[-1:])), mode='markers+text', name='Scheduling event (label)', marker=dict(symbol='circle'), text=segment_len_list[-1:], textposition='bottom center'), row=1, col=1, secondary_y=True)
 
     fig.add_trace(
-        go.Scatter(x=ch_time[-2]+dtime_samples, y=cp_prob, mode='markers', name='predictions'),
+        go.Scatter(x=ch_time[-2]+dtime_samples, y=cp_dtime, mode='markers', name='predictions'),
         row=1, col=1,
         secondary_y=False
     )
 
-    # add a bar plot, showing probabilities of the number of rbs
-    cp_num_rbs = cp_num_rbs[0]
+    # prediction len samples
+    sample_len_min = prediction_config['probability_generation']['sample_len_min']
+    sample_len_max = prediction_config['probability_generation']['sample_len_max']
+    num_steps_len = prediction_config['probability_generation']['num_steps_len']
+    len_samples = np.linspace(sample_len_min, sample_len_max, num_steps_len)
     fig.add_trace(
-        go.Bar(x=np.arange(len(cp_num_rbs)), y=cp_num_rbs, name='Number of RBs', marker_color='rgba(0, 0, 255, 0.5)'),
-        row=2, col=1
+        go.Scatter(x=len_samples, y=cp_len_bytes, mode='markers', name='Segment length prediction [bytes]'),
+        row=2, col=1,
+        secondary_y=False
     )
 
     fig.update_layout(
