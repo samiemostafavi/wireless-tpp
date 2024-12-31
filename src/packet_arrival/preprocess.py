@@ -197,10 +197,15 @@ def create_training_dataset(args):
         db_id += 1
     dim_process = len(list(packet_sizes_set))
     logger.info(f"Number of unique packet sizes and dim_process: {dim_process}")
-    # sort packet_sizes_set and make a dict to map packet sizes to integers
-    packet_sizes_sorted_list = sorted(list(packet_sizes_set))
-    psize_eventtype_mapping = {packet_size: idx for idx, packet_size in enumerate(packet_sizes_sorted_list)}
-    logger.info(f"Packet sizes dict: {psize_eventtype_mapping}")
+
+    if dim_process > 20 or args.notypemapping:
+        logger.warning("No event type mapping: arg.notypemapping is set or dim_process > 20")
+        psize_eventtype_mapping = None
+    else:
+        # sort packet_sizes_set and make a dict to map packet sizes to integers
+        packet_sizes_sorted_list = sorted(list(packet_sizes_set))
+        psize_eventtype_mapping = {packet_size: idx for idx, packet_size in enumerate(packet_sizes_sorted_list)}
+        logger.info(f"Packet sizes dict: {psize_eventtype_mapping}")
 
     dataset_config = {
         'dim_process' : dim_process,
@@ -340,7 +345,7 @@ def extract_packet_arrival_events(result_database_files, time_bounds, psize_even
 
             packet_arrival_events.append(
                 {
-                    'type_event' : psize_eventtype_mapping[packet['ip.in.length']],
+                    'type_event' : psize_eventtype_mapping[packet['ip.in.length']] if psize_eventtype_mapping else packet['ip.in.length'],
                     'time_since_start' : time_since_frame0,
                     'time_since_last_event' : time_since_last_event,
                     'timestamp' : packet['ip.in.timestamp']

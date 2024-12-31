@@ -109,12 +109,12 @@ def plot_predictions(args):
     with open(pkl_file, 'rb') as file:
         data = pickle.load(file)
 
-    model_id = generation_output_config['base_config']['model_id']
-    if model_id == 'IntensityFree2DPacketArrival' and generation_output_config['prediction_config']['method'] == 'probabilistic':
+    is_2d = generation_output_config['model_config']['model_specs']['mdn']['2d']
+    if is_2d and generation_output_config['prediction_config']['method'] == 'probabilistic':
         plot_probability_predictions_2D(dataset_config, generation_output_config, data, model_path, args)
-    elif model_id == 'IntensityFreePacketArrival' and generation_output_config['prediction_config']['method'] == 'probabilistic':
+    elif not is_2d and generation_output_config['prediction_config']['method'] == 'probabilistic':
         plot_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
-    elif model_id == 'IntensityFreePacketArrival' and generation_output_config['prediction_config']['method'] == 'sampling':
+    elif not is_2d and generation_output_config['prediction_config']['method'] == 'sampling':
         plot_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
 
 def transform_list(input_list, max_period):
@@ -143,33 +143,38 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
 
     # plot history
     history_dtime_data = []
+    history_time_data = []
     history_event_type_data = []
     for batch in data['label']:
         history_dtime_data.append(batch[0])
-        history_event_type_data.append(batch[1])
+        history_time_data.append(batch[1])
+        history_event_type_data.append(batch[2])
 
     concatenated_history_dtime = np.concatenate(history_dtime_data, axis=0)
+    concatenated_history_time = np.concatenate(history_time_data, axis=0)
     concatenated_history_event_type = np.concatenate(history_event_type_data, axis=0)
 
-    dtime_data = []
-    event_type_data = []
+    p_dtime = []
+    p_len_bytes = []
     for batch in data['pred']:
-        dtime_data.append(batch[0])
-        event_type_data.append(batch[1])
-    concatenated_label_dtime = np.concatenate(dtime_data, axis=0)
-    concatenated_label_event_type = np.concatenate(event_type_data, axis=0)
+        p_dtime.append(batch[0])
+        p_len_bytes.append(batch[1])
+    cp_dtime = np.concatenate(p_dtime, axis=0)
+    cp_len_bytes = np.concatenate(p_len_bytes, axis=0)
 
-    max_index = concatenated_label_dtime.shape[0]
+    max_index = cp_dtime.shape[0]
     ar_index = np.random.randint(0, max_index, size=1)[0]
     assert ar_index < max_index, f"Index out of range: {ar_index} > {max_index}"
-    dtime_logprob_pred = concatenated_label_dtime[ar_index,:]
+    dtime_logprob_pred = cp_dtime[ar_index,:]
     dtime_prob_pred = np.exp(dtime_logprob_pred)
+    len_logprob_pred = cp_len_bytes[ar_index,:]
+    len_prob_pred = np.exp(len_logprob_pred)
 
     history_dtime = concatenated_history_dtime[ar_index,:]
     history_time = np.cumsum(history_dtime)
     history_event_type = concatenated_history_event_type[ar_index,:]
 
-    fig = make_subplots(rows=1, cols=1, subplot_titles=("Predictions"), specs=[[{"secondary_y": True}]])
+    fig = make_subplots(rows=2, cols=1, subplot_titles=("Predictions"), specs=[[{"secondary_y": True}],[{"secondary_y": False}]])
 
     history_time = transform_list(history_time, 1024*10.0) # 1024 (max_num_frames) * 10ms (20 slots each 0.5 ms) is the max period
 
@@ -212,6 +217,17 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
         secondary_y=True
     )
 
+    # prediction len samples
+    sample_len_min = prediction_config['probability_generation']['sample_len_min']
+    sample_len_max = prediction_config['probability_generation']['sample_len_max']
+    num_steps_len = prediction_config['probability_generation']['num_steps_len']
+    len_samples = np.linspace(sample_len_min, sample_len_max, num_steps_len)
+    fig.add_trace(
+        go.Scatter(x=len_samples, y=len_prob_pred, mode='markers', name='Size [bytes]'),
+        row=2, col=1,
+        secondary_y=False
+    )
+
     fig.update_layout(
         title="Predictions and History",
         xaxis_title="Time [ms]",
@@ -220,47 +236,20 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     )
     fig.write_html(model_path / "prob_delta_times.html")
 
-    # concatenated_label_event_type shape: (num_batches, 1, num_event_types)
-    event_types_length = concatenated_label_event_type.shape[2] # event_types length
-    event_types_probs = np.exp(concatenated_label_event_type[ar_index,0,:])
-
-    # Define class labels
-    class_labels = [f"Event type {i}" for i in range(event_types_length)]
-
-    # Create a figure
-    fig = go.Figure()
-
-    # Add traces for each set of probabilities
-    fig.add_trace(
-        go.Bar(
-            x=class_labels,
-            y=event_types_probs,
-            opacity=0.7
-        )
-    )
-    # Update layout for better aesthetics
-    fig.update_layout(
-        title="Probability Distribution Across Classes",
-        xaxis_title="Class Number",
-        yaxis_title="Probability",
-        barmode='group',  # Options: 'group', 'overlay', 'stack'
-        template='plotly_white',
-        legend_title="Probability Sets",
-        xaxis_tickangle=-45
-    )
-    fig.write_html(model_path / "prob_event_types.html")
 
 def plot_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, args):
 
     # plot history
     history_dtime_data = []
-    history_event_type_data = []
+    history_time_data = []
+    history_len_data = []
     for batch in data['label']:
         history_dtime_data.append(batch[0])
-        history_event_type_data.append(batch[1])
+        history_time_data.append(batch[1])
+        history_len_data.append(batch[2])
 
     concatenated_history_dtime = np.concatenate(history_dtime_data, axis=0)
-    concatenated_history_event_type = np.concatenate(history_event_type_data, axis=0)
+    concatenated_history_event_type = np.concatenate(history_len_data, axis=0)
 
     dtime_data = []
     event_type_data = []

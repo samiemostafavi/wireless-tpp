@@ -92,7 +92,7 @@ class TorchModelWrapper:
             self.valid_summary_writer.close()
         return
 
-    def run_batch_scheduling(self, batch, phase):
+    def run_batch_mdn(self, batch, phase):
         """Run one batch.
 
         Args:
@@ -114,38 +114,34 @@ class TorchModelWrapper:
             grad_flag = is_training
             # run model
             with torch.set_grad_enabled(grad_flag):
-                loss, num_event, dtime_loss, num_rbs_loss = self.model.loglike_loss(batch)
+                loss, num_event, dtime_loss, len_loss = self.model.loglike_loss(batch)
 
             # Assume we dont do prediction on train set
-            pred_dtime, pred_type, label_dtime, label_type, mask = None, None, None, None, None
+            pred_dtime, pred_len, pred_dtime_var, pred_len_var, label_dtime, label_len, mask = None, None, None, None, None, None, None
 
             # update grad
             if is_training:
                 self.opt.zero_grad()
                 (loss / num_event).backward()
                 self.opt.step()
-            else:  # by default we do not do evaluation on train set which may take a long time
-                if self.model.event_sampler:
-                    self.model.eval()
-                    with torch.no_grad():
-                        if batch[1] is not None and batch[2] is not None:
-                            label_dtime, label_type = batch[1][:, 1:].cpu().numpy(), batch[2][:, 1:].cpu().numpy()
-                        if batch[3] is not None:
-                            mask = batch[3][:, 1:].cpu().numpy()
-                        pred_dtime, pred_type = self.model.predict_one_step_at_every_event(batch=batch)
-                        pred_dtime = pred_dtime.detach().cpu().numpy()
-                        pred_type = pred_type.detach().cpu().numpy()
-            return loss.item(), num_event, (pred_dtime, pred_type), (label_dtime, label_type), (mask,), dtime_loss.item(), num_rbs_loss.item()
-        else:
-            pred_dtime, pred_type, ll_dtime, ll_type, num_events = self.model.predict_multi_step_since_last_event(batch=batch)
-            pred_dtime = pred_dtime.detach().cpu().numpy()
-            pred_type = pred_type.detach().cpu().numpy()
-            ll_dtime = ll_dtime.detach().cpu().numpy()
-            ll_type = ll_type.detach().cpu().numpy()
-            label_dtime, label_type = batch[1][:, 1:].cpu().numpy(), batch[2][:, 1:].cpu().numpy()
-            return (pred_dtime, pred_type), ll_dtime, ll_type, num_events, (label_dtime, label_type)
+            else:
+                #self.model.eval()
+                with torch.no_grad():
+                    (pred_dtime, pred_dtime_var), (pred_len, pred_len_var), \
+                        (label_dtime, label_len), event_mask, num_events = self.model.predict_mean_variance(batch=batch)
+                    pred_dtime = pred_dtime.detach().cpu().numpy()
+                    pred_dtime_var = pred_dtime_var.detach().cpu().numpy()
+                    pred_len = pred_len.detach().cpu().numpy()
+                    pred_len_var = pred_len_var.detach().cpu().numpy()
+                    label_dtime = label_dtime.detach().cpu().numpy()
+                    label_len = label_len.detach().cpu().numpy()
+                    mask = event_mask.detach().cpu().numpy()
 
-    def run_batch_link_quality(self, batch, phase):
+            return loss.item(), num_event, (pred_dtime, pred_len), (label_dtime, label_len), mask, dtime_loss.item(), len_loss.item(), (pred_dtime_var, pred_len_var)
+        else:
+            raise NotImplementedError()
+
+    def run_batch_mcs(self, batch, phase):
         """Run one batch.
 
         Args:
@@ -170,7 +166,7 @@ class TorchModelWrapper:
                 loss, num_event = self.model.loglike_loss(batch)
 
             # Assume we dont do prediction on train set
-            pred_dtime, pred_type, label_dtime, label_type, mask = None, None, None, None, None
+            pred_mcs, pred_mcs_var, label_mcs, mask = None, None, None, None
 
             # update grad
             if is_training:
@@ -178,27 +174,17 @@ class TorchModelWrapper:
                 (loss / num_event).backward()
                 self.opt.step()
             else:  # by default we do not do evaluation on train set which may take a long time
-                if self.model.event_sampler:
-                    self.model.eval()
-                    with torch.no_grad():
-                        if batch[1] is not None and batch[2] is not None:
-                            label_dtime, label_type = batch[1][:, 1:].cpu().numpy(), batch[2][:, 1:].cpu().numpy()
-                        if batch[3] is not None:
-                            mask = batch[3][:, 1:].cpu().numpy()
-                        pred_dtime, pred_type = self.model.predict_one_step_at_every_event(batch=batch)
-                        pred_dtime = pred_dtime.detach().cpu().numpy()
-                        pred_type = pred_type.detach().cpu().numpy()
-            return loss.item(), num_event, (pred_dtime, pred_type), (label_dtime, label_type), (mask,)
+                with torch.no_grad():
+                    (pred_mcs, pred_mcs_var), (_, _), (label_mcs, _), event_mask, num_events = self.model.predict_mean_variance(batch=batch)
+                    pred_mcs = pred_mcs.detach().cpu().numpy()
+                    pred_mcs_var = pred_mcs_var.detach().cpu().numpy()
+                    label_mcs = label_mcs.detach().cpu().numpy()
+                    mask = event_mask.detach().cpu().numpy()
+            return loss.item(), num_event, (pred_mcs, None), (label_mcs, None), mask, None, None, (pred_mcs_var, None)
         else:
-            pred_dtime, pred_type, ll_dtime, ll_type, num_events = self.model.predict_multi_step_since_last_event(batch=batch)
-            pred_dtime = pred_dtime.detach().cpu().numpy()
-            pred_type = pred_type.detach().cpu().numpy()
-            ll_dtime = ll_dtime.detach().cpu().numpy()
-            ll_type = ll_type.detach().cpu().numpy()
-            label_dtime, label_type = batch[1][:, 1:].cpu().numpy(), batch[2][:, 1:].cpu().numpy()
-            return (pred_dtime, pred_type), ll_dtime, ll_type, num_events, (label_dtime, label_type)
+            raise NotImplementedError()
 
-    def run_batch_packet_arrival(self, batch, phase):
+    def run_batch_retx(self, batch, phase):
         """Run one batch.
 
         Args:
@@ -220,10 +206,10 @@ class TorchModelWrapper:
             grad_flag = is_training
             # run model
             with torch.set_grad_enabled(grad_flag):
-                loss, num_event, dtime_loss, mark_loss = self.model.loglike_loss(batch)
+                loss, num_event, mretx_loss, rfailed_loss = self.model.loglike_loss(batch)
 
             # Assume we dont do prediction on train set
-            pred_dtime, pred_type, label_dtime, label_type, mask = None, None, None, None, None
+            pred_mretx, pred_rfailed, pred_mretx_var, pred_rfailed_var, label_mretx, label_rfailed, mask = None, None, None, None, None, None, None
 
             # update grad
             if is_training:
@@ -231,25 +217,18 @@ class TorchModelWrapper:
                 (loss / num_event).backward()
                 self.opt.step()
             else:  # by default we do not do evaluation on train set which may take a long time
-                if self.model.event_sampler:
-                    self.model.eval()
-                    with torch.no_grad():
-                        if batch[1] is not None and batch[2] is not None:
-                            label_dtime, label_type = batch[1][:, 1:].cpu().numpy(), batch[2][:, 1:].cpu().numpy()
-                        if batch[3] is not None:
-                            mask = batch[3][:, 1:].cpu().numpy()
-                        pred_dtime, pred_type = self.model.predict_one_step_at_every_event(batch=batch)
-                        pred_dtime = pred_dtime.detach().cpu().numpy()
-                        pred_type = pred_type.detach().cpu().numpy()
-            return loss.item(), num_event, (pred_dtime, pred_type), (label_dtime, label_type), (mask,), dtime_loss.item(), mark_loss.item()
+                with torch.no_grad():
+                    (pred_mretx, pred_mretx_var), (pred_rfailed, pred_rfailed_var), (label_mretx, label_rfailed), event_mask, num_events = self.model.predict_mean_variance(batch=batch)
+                    pred_mretx = pred_mretx.detach().cpu().numpy()
+                    pred_mretx_var = pred_mretx_var.detach().cpu().numpy()
+                    pred_rfailed = pred_rfailed.detach().cpu().numpy()
+                    pred_rfailed_var = pred_rfailed_var.detach().cpu().numpy()
+                    label_mretx = label_mretx.detach().cpu().numpy()
+                    label_rfailed = label_rfailed.detach().cpu().numpy()
+                    mask = event_mask.detach().cpu().numpy()
+            return loss.item(), num_event, (pred_mretx, pred_rfailed), (label_mretx, label_rfailed), mask, mretx_loss.item(), rfailed_loss.item(), (pred_mretx_var, pred_rfailed_var)
         else:
-            pred_dtime, pred_type, ll_dtime, ll_type, num_events = self.model.predict_multi_step_since_last_event(batch=batch)
-            pred_dtime = pred_dtime.detach().cpu().numpy()
-            pred_type = pred_type.detach().cpu().numpy()
-            ll_dtime = ll_dtime.detach().cpu().numpy()
-            ll_type = ll_type.detach().cpu().numpy()
-            label_dtime, label_type = batch[1][:, 1:].cpu().numpy(), batch[2][:, 1:].cpu().numpy()
-            return (pred_dtime, pred_type), ll_dtime, ll_type, num_events, (label_dtime, label_type)
+            raise NotImplementedError()
         
     def run_batch_probability_generation_packet_arrival(self, batch, phase):
         """Run one batch get probabilities only for the last event in the sequence
@@ -268,12 +247,16 @@ class TorchModelWrapper:
             return None
         
         # [batch_size, seq_len, num_samples_boundary, event_num]
-        dtime_pred_probs, event_type_pred_probs, label_dtime, label_type = self.model.predict_probabilities_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
-        dtime_pred_probs = dtime_pred_probs.detach().cpu().numpy()
-        event_type_pred_probs = event_type_pred_probs.detach().cpu().numpy()
-        label_dtime = label_dtime.detach().cpu().numpy()
-        label_type = label_type.detach().cpu().numpy()
-        return (dtime_pred_probs, event_type_pred_probs), (label_dtime, label_type)
+        (dtimes_logprob_pred, lens_logprob_pred), (dtime_seqs, time_seqs, len_seqs), event_mask, num_events \
+            = self.model.predict_probabilities(batch=batch, prediction_config=self.prediction_config)
+        dtimes_logprob_pred = dtimes_logprob_pred.detach().cpu().numpy()
+        lens_logprob_pred = lens_logprob_pred.detach().cpu().numpy()
+        dtime_seqs = dtime_seqs.detach().cpu().numpy()
+        time_seqs = time_seqs.detach().cpu().numpy()
+        len_seqs = len_seqs.detach().cpu().numpy()
+        event_mask = event_mask.detach().cpu().numpy()
+        return (dtimes_logprob_pred,lens_logprob_pred), (dtime_seqs, time_seqs, len_seqs), (event_mask, num_events)
+    
     
     def run_batch_sample_generation_packet_arrival(self, batch, phase):
         """Run one batch produce samples only for the last event in the sequence
@@ -292,14 +275,16 @@ class TorchModelWrapper:
             return None
         
         # [batch_size, seq_len, num_samples_boundary, event_num]
-        pred_samples, label_dtime, label_type = self.model.generate_samples_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
-        dtime_pred_samples = pred_samples[0].detach().cpu().numpy()
-        event_type_pred_samples = pred_samples[1].detach().cpu().numpy()
-        label_dtime = label_dtime.detach().cpu().numpy()
-        label_type = label_type.detach().cpu().numpy()
-        return (dtime_pred_samples, event_type_pred_samples), (label_dtime, label_type)
+        (dtimes_samples, len_samples), (dtime_seqs, time_seqs, len_seqs), event_mask, num_events = self.model.generate_samples(batch=batch, prediction_config=self.prediction_config)
+        dtimes_samples = dtimes_samples.detach().cpu().numpy()
+        len_samples = len_samples.detach().cpu().numpy()
+        dtime_seqs = dtime_seqs.detach().cpu().numpy()
+        time_seqs = time_seqs.detach().cpu().numpy()
+        len_seqs = len_seqs.detach().cpu().numpy()
+        event_mask = event_mask.detach().cpu().numpy()
+        return (dtimes_samples, len_samples), (dtime_seqs, time_seqs, len_seqs), (event_mask, num_events)
     
-    def run_batch_probability_generation_link_quality(self, batch, phase):
+    def run_batch_probability_generation_mcs(self, batch, phase):
         """Run one batch get probabilities only for the last event in the sequence
 
         Args:
@@ -315,17 +300,24 @@ class TorchModelWrapper:
         if phase is not RunnerPhase.PREDICT:
             return None
         
-        pred_probs, label_dtime, label_time, label_type = self.model.predict_probabilities_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
-        dtime_pred_probs = pred_probs[0]
-        event_type_pred_probs = pred_probs[1]
-        dtime_pred_probs = dtime_pred_probs.detach().cpu().numpy()
-        event_type_pred_probs = event_type_pred_probs.detach().cpu().numpy()
-        label_dtime = label_dtime.detach().cpu().numpy()
-        label_time = label_time.detach().cpu().numpy()
-        label_type = label_type.detach().cpu().numpy()
-        return (dtime_pred_probs, event_type_pred_probs), (label_dtime, label_time, label_type)
+        (mcs_logprobs, _), \
+            (dtime_seqs, time_seqs, type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), \
+                event_mask, num_events = \
+                    self.model.predict_probabilities(batch=batch, prediction_config=self.prediction_config)
+        
+        mcs_logprobs = mcs_logprobs.detach().cpu().numpy()
+        dtime_seqs = dtime_seqs.detach().cpu().numpy()
+        time_seqs = time_seqs.detach().cpu().numpy()
+        type_seqs = type_seqs.detach().cpu().numpy()
+        mcs_seqs = mcs_seqs.detach().cpu().numpy()
+        mretx_seqs = mretx_seqs.detach().cpu().numpy()
+        rfailed_seqs = rfailed_seqs.detach().cpu().numpy()
+        num_rbs_seqs = num_rbs_seqs.detach().cpu().numpy()
+        event_mask = event_mask.detach().cpu().numpy()
+        return (mcs_logprobs, None), (dtime_seqs, time_seqs, type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), (event_mask, num_events)
+
     
-    def run_batch_sample_generation_link_quality(self, batch, phase):
+    def run_batch_sample_generation_mcs(self, batch, phase):
         """Run one batch produce samples only for the last event in the sequence
 
         Args:
@@ -341,20 +333,22 @@ class TorchModelWrapper:
         if phase is not RunnerPhase.PREDICT:
             return None
         
-        if self.model_id == 'THPLinkQuality':
-            pred_dtime, pred_type, label_dtime, label_type = self.model.generate_samples_one_step_since_last_event(batch=batch)
-            pred_dtime = pred_dtime.detach().cpu().numpy()
-            pred_type = pred_type.detach().cpu().numpy()
-            label_dtime = label_dtime.detach().cpu().numpy()
-            label_type = label_type.detach().cpu().numpy()
-            return (pred_dtime, pred_type), (label_dtime, label_type)
-        else:
-            # [batch_size, seq_len, num_samples_boundary, event_num]
-            pred_samples, label_dtime, label_type = self.model.generate_samples_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
-            pred_samples = pred_samples.detach().cpu().numpy()
-            label_dtime = label_dtime.detach().cpu().numpy()
-            label_type = label_type.detach().cpu().numpy()
-            return pred_samples, (label_dtime, label_type)
+        (mcs_samples, _), \
+            (dtime_seqs, time_seqs, type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), \
+                event_mask, num_events = \
+                    self.model.generate_samples(batch=batch, prediction_config=self.prediction_config)
+        
+        mcs_samples = mcs_samples.detach().cpu().numpy()
+        dtime_seqs = dtime_seqs.detach().cpu().numpy()
+        time_seqs = time_seqs.detach().cpu().numpy()
+        type_seqs = type_seqs.detach().cpu().numpy()
+        mcs_seqs = mcs_seqs.detach().cpu().numpy()
+        mretx_seqs = mretx_seqs.detach().cpu().numpy()
+        rfailed_seqs = rfailed_seqs.detach().cpu().numpy()
+        num_rbs_seqs = num_rbs_seqs.detach().cpu().numpy()
+        event_mask = event_mask.detach().cpu().numpy()
+        return (mcs_samples, None), (dtime_seqs, time_seqs, type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), (event_mask, num_events)
+
         
 
     def run_batch_probability_generation_scheduling(self, batch, phase):
@@ -373,19 +367,23 @@ class TorchModelWrapper:
         if phase is not RunnerPhase.PREDICT:
             return None
         
-        dtime_pred_probs, num_rbs_logits, label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs = self.model.predict_probabilities_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
-        dtime_pred_probs = dtime_pred_probs.detach().cpu().numpy()
-        num_rbs_logits = num_rbs_logits.detach().cpu().numpy()
-        label_dtime = label_dtime.detach().cpu().numpy()
-        label_time = label_time.detach().cpu().numpy()
-        label_type = label_type.detach().cpu().numpy()
+        (dtimes_logprob_pred, lens_logprob_pred), (dtime_seqs, time_seqs, \
+            type_seqs, slot_seqs, len_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, \
+            num_rbs_seqs), event_mask, num_events = self.model.predict_probabilities(batch=batch, prediction_config=self.prediction_config)
+        
+        dtimes_logprob_pred = dtimes_logprob_pred.detach().cpu().numpy()
+        lens_logprob_pred = lens_logprob_pred.detach().cpu().numpy()
+        dtime_seqs = dtime_seqs.detach().cpu().numpy()
+        time_seqs = time_seqs.detach().cpu().numpy()
+        type_seqs = type_seqs.detach().cpu().numpy()
         slot_seqs = slot_seqs.detach().cpu().numpy()
         len_seqs = len_seqs.detach().cpu().numpy()
         mcs_seqs = mcs_seqs.detach().cpu().numpy()
-        mac_retx_seqs = mac_retx_seqs.detach().cpu().numpy()
-        rlc_failed_seqs = rlc_failed_seqs.detach().cpu().numpy()
+        mretx_seqs = mretx_seqs.detach().cpu().numpy()
+        rfailed_seqs = rfailed_seqs.detach().cpu().numpy()
         num_rbs_seqs = num_rbs_seqs.detach().cpu().numpy()
-        return (dtime_pred_probs,num_rbs_logits), (label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs)
+        event_mask = event_mask.detach().cpu().numpy()
+        return (dtimes_logprob_pred,lens_logprob_pred), (dtime_seqs, time_seqs, type_seqs, slot_seqs, len_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), (event_mask, num_events)
     
     def run_batch_sample_generation_scheduling(self, batch, phase):
         """Run one batch produce samples only for the last event in the sequence
@@ -403,16 +401,20 @@ class TorchModelWrapper:
         if phase is not RunnerPhase.PREDICT:
             return None
         
-        dtimes_samples, num_rbs_samples, label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs = self.model.generate_samples_one_step_since_last_event(batch=batch, prediction_config=self.prediction_config)
+        (dtimes_samples, len_samples), (dtime_seqs, time_seqs, \
+            type_seqs, slot_seqs, len_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, \
+            num_rbs_seqs), event_mask, num_events = self.model.generate_samples(batch=batch, prediction_config=self.prediction_config)
+        
         dtimes_samples = dtimes_samples.detach().cpu().numpy()
-        num_rbs_samples = num_rbs_samples.detach().cpu().numpy()
-        label_dtime = label_dtime.detach().cpu().numpy()
-        label_time = label_time.detach().cpu().numpy()
-        label_type = label_type.detach().cpu().numpy()
+        len_samples = len_samples.detach().cpu().numpy()
+        dtime_seqs = dtime_seqs.detach().cpu().numpy()
+        time_seqs = time_seqs.detach().cpu().numpy()
+        type_seqs = type_seqs.detach().cpu().numpy()
         slot_seqs = slot_seqs.detach().cpu().numpy()
         len_seqs = len_seqs.detach().cpu().numpy()
         mcs_seqs = mcs_seqs.detach().cpu().numpy()
-        mac_retx_seqs = mac_retx_seqs.detach().cpu().numpy()
-        rlc_failed_seqs = rlc_failed_seqs.detach().cpu().numpy()
+        mretx_seqs = mretx_seqs.detach().cpu().numpy()
+        rfailed_seqs = rfailed_seqs.detach().cpu().numpy()
         num_rbs_seqs = num_rbs_seqs.detach().cpu().numpy()
-        return (dtimes_samples,num_rbs_samples), (label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs)
+        event_mask = event_mask.detach().cpu().numpy()
+        return (dtimes_samples,len_samples), (dtime_seqs, time_seqs, type_seqs, slot_seqs, len_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), (event_mask, num_events)

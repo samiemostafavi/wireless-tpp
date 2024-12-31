@@ -10,7 +10,7 @@ from plotly.subplots import make_subplots
 
 from edaf.core.uplink.analyze_packet import ULPacketAnalyzer
 
-from src.link_quality import extract_link_quality_events
+from src.link_quality import extract_link_quality_events_stream_based
 from src.packet_arrival import extract_packet_arrival_events
 from src.scheduling import extract_scheduling_events
 

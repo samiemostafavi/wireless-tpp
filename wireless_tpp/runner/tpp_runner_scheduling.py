@@ -43,25 +43,25 @@ class TPPRunnerScheduling():
         )
 
         # needed for transformation of the data
-        mean_inter_time, std_inter_time, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
+        mean_dtime, std_dtime, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
             self._data_loader.train_loader().dataset.get_stats(inp_type='time_delta_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
         )
-        runner_config.model_config.set("mean_inter_time", mean_inter_time)
-        runner_config.model_config.set("std_inter_time", std_inter_time)
-        runner_config.model_config.set("mean_log_inter_time", np.log(mean_inter_time+self.eps))
-        runner_config.model_config.set("std_log_inter_time", np.log(std_inter_time+self.eps))
+        runner_config.model_config.set("mean_dtime", mean_dtime)
+        runner_config.model_config.set("std_dtime", std_dtime)
+        runner_config.model_config.set("mean_log_dtime", np.log(mean_dtime+self.eps))
+        runner_config.model_config.set("std_log_dtime", np.log(std_dtime+self.eps))
         runner_config.model_config.set("mean_event_type", mean_event_type)
         runner_config.model_config.set("std_event_type", std_event_type)
         runner_config.model_config.set("mean_log_event_type", np.log(mean_event_type+self.eps))
         runner_config.model_config.set("std_log_event_type", np.log(std_event_type+self.eps))
 
-        mean_rbs, std_rbs, mean_event_type, std_event_type, min_rbs, max_rbs, min_eventtype, max_eventtype = (
-            self._data_loader.train_loader().dataset.get_stats(inp_type='num_rbs_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+        mean_len, std_len, mean_event_type, std_event_type, min_len, max_len, min_eventtype, max_eventtype = (
+            self._data_loader.train_loader().dataset.get_stats(inp_type='len_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
         )
-        runner_config.model_config.set("mean_rbs", mean_rbs)
-        runner_config.model_config.set("std_rbs", std_rbs)
-        runner_config.model_config.set("mean_log_rbs", np.log(mean_rbs+self.eps))
-        runner_config.model_config.set("std_log_rbs", np.log(std_rbs+self.eps))
+        runner_config.model_config.set("mean_len", mean_len)
+        runner_config.model_config.set("std_len", std_len)
+        runner_config.model_config.set("mean_log_len", np.log(mean_len+self.eps))
+        runner_config.model_config.set("std_log_len", np.log(std_len+self.eps))
 
         # just for the sake of reporting in logs
         self._data_loader.train_loader().dataset.get_stats(inp_type='len_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
@@ -378,37 +378,57 @@ class TPPRunnerScheduling():
         """
         total_loss = 0
         total_m_dtime_loss = 0
-        total_m_num_rbs_loss = 0
+        total_m_len_loss = 0
         dtime_loss = 0
         event_loss = 0
+        total_dtime_error = 0
+        total_len_error = 0
         total_num_event = 0
+        total_dtime_var = 0
+        total_len_var = 0
         epoch_label = []
         epoch_pred = []
+        epoch_pred_var = []
         epoch_mask = []
         pad_index = self.runner_config.data_config.data_specs.pad_token_id
         metrics_dict = OrderedDict()
         if phase in [RunnerPhase.TRAIN, RunnerPhase.VALIDATE]:
             for batch in data_loader:
-                batch_loss, batch_num_event, batch_pred, batch_label, batch_mask, m_dtime_loss, m_num_rbs_loss = \
-                    self.model_wrapper.run_batch_scheduling(batch, phase=phase)
+                batch_loss, batch_num_event, batch_pred, batch_label, batch_mask, m_dtime_loss, m_len_loss, batch_pred_var = \
+                    self.model_wrapper.run_batch_mdn(batch, phase=phase)
 
                 total_loss += batch_loss
                 total_m_dtime_loss += m_dtime_loss
-                total_m_num_rbs_loss += m_num_rbs_loss
+                total_m_len_loss += m_len_loss
                 total_num_event += batch_num_event
-                epoch_pred.append(batch_pred)
-                epoch_label.append(batch_label)
-                epoch_mask.append(batch_mask)
+                if phase == RunnerPhase.VALIDATE:
+                    batch_mask_int = np.array(batch_mask,dtype=int)
+                    total_dtime_error += sum(np.multiply(np.array(abs(batch_label[0] - batch_pred[0])),batch_mask_int))
+                    total_len_error += sum(np.multiply(np.array(abs(batch_label[1] - batch_pred[1])),batch_mask_int))
+                    total_dtime_var += sum(np.multiply(np.array(batch_pred_var[0]),batch_mask_int))
+                    total_len_var += sum(np.multiply(np.array(batch_pred_var[1]),batch_mask_int))
+                    epoch_pred.append(batch_pred)
+                    epoch_pred_var.append(batch_pred_var)
+                    epoch_label.append(batch_label)
+                    epoch_mask.append(batch_mask)
 
+            # calc loss
             avg_loss = total_loss / total_num_event
             avg_m_dtime_loss = total_m_dtime_loss / total_num_event
-            avg_m_num_rbs_loss = total_m_num_rbs_loss / total_num_event
+            avg_m_len_loss = total_m_len_loss / total_num_event
+            metrics_dict.update({'loglike': -avg_loss, 'num_events': total_num_event, 'dtime_loglike': -avg_m_dtime_loss, 'len_loglike': -avg_m_len_loss})
 
-            metrics_dict.update({'loglike': -avg_loss, 'num_events': total_num_event, 'dtime_loglike': -avg_m_dtime_loss, 'num_rbs_loglike': -avg_m_num_rbs_loss})
+            # calc errors
+            if phase == RunnerPhase.VALIDATE:
+                avg_dtime_error = total_dtime_error / total_num_event
+                avg_len_error = total_len_error / total_num_event
+                avg_dtime_var = total_dtime_var / total_num_event
+                avg_len_var = total_len_var / total_num_event
+                metrics_dict.update({'dtime_mae': avg_dtime_error, 'len_mae': avg_len_error, 'dtime_var': avg_dtime_var, 'len_var': avg_len_var})
 
         else:
             for batch in data_loader:
-                batch_pred, ll_dtime, ll_type, batch_num_event, batch_label = self.model_wrapper.run_batch_scheduling(batch, phase=phase)
+                batch_pred, ll_dtime, ll_type, batch_num_event, batch_label = self.model_wrapper.run_batch_mdn(batch, phase=phase)
                 total_loss += (ll_dtime+ll_type)
                 dtime_loss += ll_dtime
                 event_loss += ll_type
@@ -474,17 +494,19 @@ class TPPRunnerScheduling():
 
         probs_pred = []
         epoch_label = []
+        masks = []
         metrics_dict = OrderedDict()
         if phase is not RunnerPhase.PREDICT:
             return
         
         for batch in data_loader:
-            batch_probs, batch_label = self.model_wrapper.run_batch_probability_generation_scheduling(batch, phase=phase)
+            batch_probs, batch_label, batch_masks = self.model_wrapper.run_batch_probability_generation_scheduling(batch, phase=phase)
             probs_pred.append(batch_probs)
             epoch_label.append(batch_label)
+            masks.append(batch_masks)
 
         if phase == RunnerPhase.PREDICT:
-            metrics_dict.update({'pred': probs_pred, 'label': epoch_label})
+            metrics_dict.update({'pred': probs_pred, 'label': epoch_label, 'mask': masks})
 
         return metrics_dict
     
@@ -501,16 +523,18 @@ class TPPRunnerScheduling():
 
         samples_pred = []
         epoch_label = []
+        masks = []
         metrics_dict = OrderedDict()
         if phase is not RunnerPhase.PREDICT:
             return
         
         for batch in data_loader:
-            batch_samples, batch_label = self.model_wrapper.run_batch_sample_generation_scheduling(batch, phase=phase)
+            batch_samples, batch_label, batch_mask = self.model_wrapper.run_batch_sample_generation_scheduling(batch, phase=phase)
             samples_pred.append(batch_samples)
             epoch_label.append(batch_label)
+            masks.append(batch_mask)
 
         if phase == RunnerPhase.PREDICT:
-            metrics_dict.update({'pred': samples_pred, 'label': epoch_label})
+            metrics_dict.update({'pred': samples_pred, 'label': epoch_label, 'mask': masks})
 
         return metrics_dict

@@ -29,14 +29,14 @@ class TPPDataLoaderLinkQuality(BaseTPPDataLoader):
 
         source_data = data[split]
         time_seqs = [[x["time_since_start"] for x in seq] for seq in source_data]
-        type_seqs = [[x["type_event"] for x in seq] for seq in source_data]
         time_delta_seqs = [[x["time_since_last_event"] for x in seq] for seq in source_data]
-        nenm = self.data_config.data_specs.num_event_types_no_mcs
-        mcs_time_seqs = [[x["time_since_start"] for x in seq if x["type_event"] >= nenm] for seq in source_data]
-        mcs_type_seqs = [[x["type_event"] for x in seq if x["type_event"] >= nenm] for seq in source_data]
-        mcs_time_delta_seqs = [[x["time_since_last_event"] for x in seq if x["type_event"] >= nenm] for seq in source_data]
+        type_seqs = [[x["type_event"] for x in seq] for seq in source_data]
+        mcs_seqs = [[x["mcs_index"] for x in seq] for seq in source_data]
+        num_rbs_seqs = [[x["num_rbs"] for x in seq] for seq in source_data]
+        mretx_seqs = [[x["mretx"] for x in seq] for seq in source_data]
+        rfailed_seqs = [[x["rfailed"] for x in seq] for seq in source_data]
 
-        input_dict = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs, 'mcs_time_seqs': mcs_time_seqs, 'mcs_time_delta_seqs': mcs_time_delta_seqs, 'mcs_type_seqs': mcs_type_seqs})
+        input_dict = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs, 'mcs_seqs': mcs_seqs, 'num_rbs_seqs': num_rbs_seqs, 'mretx_seqs': mretx_seqs, 'rfailed_seqs' : rfailed_seqs})
 
         return input_dict
 
@@ -58,14 +58,14 @@ class TPPDataLoaderLinkQuality(BaseTPPDataLoader):
         """
         if self.source_data is not None:
             time_seqs = [[x["time_since_start"] for x in seq] for seq in self.source_data]
-            type_seqs = [[x["type_event"] for x in seq] for seq in self.source_data]
             time_delta_seqs = [[x["time_since_last_event"] for x in seq] for seq in self.source_data]
-            nenm = self.data_config.data_specs.num_event_types_no_mcs
-            mcs_time_seqs = [[x["time_since_start"] for x in seq if x["type_event"] >= nenm] for seq in self.source_data]
-            mcs_type_seqs = [[x["type_event"] for x in seq if x["type_event"] >= nenm] for seq in self.source_data]
-            mcs_time_delta_seqs = [[x["time_since_last_event"] for x in seq if x["type_event"] >= nenm] for seq in self.source_data]
-            
-            data = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs, 'mcs_time_seqs': mcs_time_seqs, 'mcs_time_delta_seqs': mcs_time_delta_seqs, 'mcs_type_seqs': mcs_type_seqs})
+            type_seqs = [[x["type_event"] for x in seq] for seq in self.source_data]
+            mcs_seqs = [[x["mcs_index"] for x in seq] for seq in self.source_data]
+            num_rbs_seqs = [[x["num_rbs"] for x in seq] for seq in self.source_data]
+            mretx_seqs = [[x["mretx"] for x in seq] for seq in self.source_data]
+            rfailed_seqs = [[x["rfailed"] for x in seq] for seq in self.source_data]
+
+            data = dict({'time_seqs': time_seqs, 'time_delta_seqs': time_delta_seqs, 'type_seqs': type_seqs, 'mcs_seqs': mcs_seqs, 'num_rbs_seqs': num_rbs_seqs, 'mretx_seqs': mretx_seqs, 'rfailed_seqs' : rfailed_seqs})
         else:
             data_dir = self.data_config.get_data_dir(split)
             data_source_type = data_dir.split('.')[-1]

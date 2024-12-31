@@ -77,6 +77,7 @@ def process_failed_rlc_events(all_ul_schedules, failed_ue_rlc_attempts, max_harq
         frame = ue_rlc_row['mac.sdu.frame']
         slot = ue_rlc_row['mac.sdu.slot']
         hqpid = ue_mac_attempt_0['mac.harq.hqpid']
+        num_rbs = ue_mac_attempt_0['phy.tx.nb_rb']
         rvi = ue_mac_attempt_0['phy.tx.real_rvi']
 
         failed_harq_group = {
@@ -85,6 +86,7 @@ def process_failed_rlc_events(all_ul_schedules, failed_ue_rlc_attempts, max_harq
             'slot' : None,
             'timestamp' : None,
             'total_hqrounds' : 0,
+            'num_rbs' : num_rbs,
             'hqpid' : hqpid,
             'rlc_failed' : True,
             'related_schedules_list' : []
@@ -171,6 +173,7 @@ def process_successful_retx_schedule_events(all_ul_schedules, successful_retx_sc
         related_schedules_list = [suc_retx_gnb_schedule]
         hqpid = suc_retx_gnb_schedule['sched.cause.hqpid']
         hqround = suc_retx_gnb_schedule['sched.cause.hqround']
+        num_rbs = suc_retx_gnb_schedule['sched.ue.rbs']
 
         failed_harq_group = {
             'frame' : None,
@@ -178,6 +181,7 @@ def process_successful_retx_schedule_events(all_ul_schedules, successful_retx_sc
             'timestamp' : None,
             'total_hqrounds' : hqround+1,
             'hqpid' : hqpid,
+            'num_rbs' : num_rbs,
             'rlc_failed' : False,
             'schedule_id' : None,
             'related_schedules_list' : []
@@ -236,10 +240,7 @@ def filter_successful_retx_schedule(grouped_retx_schedules, grouped_rlc_failed_s
     return results
 
 
-def plot_data(args):
-
-    if args.interarrival:
-        return figure_retransmission_probabilities(args)
+def plot_data_chan_based(args):
 
     # read configuration from args.config
     with open(args.config, 'r') as f:
@@ -468,162 +469,8 @@ def plot_data(args):
         fig.update_xaxes(matches='x')
         fig.write_html(str(results_folder_addr / 'combined_plot.html'))
 
-
-def figure_retransmission_probabilities(args):
-
-    # read configuration from args.config
-    with open(args.config, 'r') as f:
-        config = json.load(f)
-    # select the source configuration
-    config = config[args.configname]
-
-    # read experiment configuration
-    folder_addr = Path(args.source)
-    # find all .db files in the folder
-    db_files = list(folder_addr.glob("*.db"))
-    if not db_files:
-        logger.error("No database files found in the specified folder.")
-        return
-    result_database_files = [str(db_file) for db_file in db_files]
-
-    # read exp configuration from args.config
-    with open(folder_addr / 'experiment_config.json', 'r') as f:
-        exp_config = json.load(f)
-
-    time_masks = config['time_masks']
-    filter_packet_sizes = config['filter_packet_sizes']
-    window_config = config['window_config']
-    dataset_size_max = config['dataset_size_max']
-    split_ratios = config['split_ratios']
-    dtime_max = config['dtime_max']
     
-    slots_duration_ms = exp_config['slots_duration_ms']
-    num_slots_per_frame = exp_config['slots_per_frame']
-    total_prbs_num = exp_config['total_prbs_num']
-    symbols_per_slot = exp_config['symbols_per_slot']
-    scheduling_map_num_integers = exp_config['scheduling_map_num_integers']
-    max_num_frames = exp_config['max_num_frames']
-    scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
-    max_harq_attempts = exp_config['max_harq_attempts']
-
-    # prepare the results folder
-    results_folder_addr = folder_addr / 'link_quality' / 'pre_plots' / args.name
-    results_folder_addr.mkdir(parents=True, exist_ok=True)
-    with open(results_folder_addr / 'config.json', 'w') as f:
-        json_obj = json.dumps(config, indent=4)
-        f.write(json_obj)
-
-    # statistics dictionary
-    stats_dict = {}
-
-    # data lists
-    prev_end_ts = 0
-    seg_retx_num_list = np.array([])
-    seg_failed_list = np.array([])
-    seg_mcs_list = np.array([])
-    seg_num_rbs_list = np.array([])
-    seg_num_bytes_list = np.array([])
-    #frame_start_ts_list = np.array([])
-    for result_database_file, time_mask in zip(result_database_files, time_masks):
-        packet_analyzer = ULPacketAnalyzer(result_database_file)
-        sched_analyzer = ULSchedulingAnalyzer(
-            total_prbs_num = total_prbs_num, 
-            symbols_per_slot = symbols_per_slot,
-            slots_per_frame = num_slots_per_frame, 
-            slots_duration_ms = slots_duration_ms, 
-            scheduling_map_num_integers = scheduling_map_num_integers,
-            max_num_frames = max_num_frames,
-            db_addr = result_database_file
-        )
-        experiment_length_ts = packet_analyzer.last_ueip_ts - packet_analyzer.first_ueip_ts
-        logger.info(f"Total experiment duration: {(experiment_length_ts)} seconds")
-
-        begin_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
-        end_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
-        logger.info(f"Filtering packet arrival events from {begin_ts} to {end_ts}, duration: {experiment_length_ts*time_mask[1]-experiment_length_ts*time_mask[0]} seconds")
-
-        # analyze packets
-        packets = packet_analyzer.figure_packettx_from_ts(begin_ts, end_ts)
-        this_db_packet_arrival_ts = []
-        #this_db_frame_start_ts = []
-        this_db_slot_num = []
-        this_db_seg_num_rbs = []
-        this_db_seg_num_bytes = []
-        this_db_seg_mcs = []
-        this_db_seg_retx_num = []
-        this_db_seg_failed = []
-        logger.info(f"Extract events for plotting")
-        prev_mcs = 0
-        for idx, packet in enumerate(packets):
-            print(f"\rProcessing packet {idx + 1}/{len(packets)} ({(idx + 1) / len(packets) * 100:.2f}%) with packet sn: {packet['sn']}", end="")
-            this_db_packet_arrival_ts.append((packet['ip.in_t']-begin_ts+prev_end_ts)*1000)
-            # add the frame start event
-            #this_db_frame_start_ts.append((sched_analyzer.find_frame_start_ts_from_ts(packet['ip.in_t'])-begin_ts+prev_end_ts)*1000)
-
-            frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
-                timestamp=packet['ip.in_t'],
-                SCHED_OFFSET_S=scheduling_time_ahead_ms/1000
-            )
-            this_db_slot_num.append(slot_num)
-
-            for idx2, rlc_attempt in enumerate(packet['rlc.attempts']):
-                t_mcs = rlc_attempt['mac.attempts'][0]['mcs']
-                if t_mcs == 0:
-                    t_mcs = prev_mcs
-                prev_mcs = t_mcs
-
-                t_rbs = rlc_attempt['mac.attempts'][0]['rbs']
-                t_bytes = rlc_attempt['len']
-                t_num_retx = len(rlc_attempt['mac.attempts'])-1
-                t_failed = int(not rlc_attempt['acked'])
-                
-                this_db_seg_num_rbs.append(t_rbs)
-                this_db_seg_retx_num.append(t_num_retx)
-                this_db_seg_failed.append(t_failed)
-                this_db_seg_mcs.append(t_mcs)
-                this_db_seg_num_bytes.append(t_bytes)
-
-                if t_mcs not in stats_dict:
-                    stats_dict[t_mcs] = {
-                        t_rbs: {
-                            'bytes': {},
-                            'retx': [0,0,0,0],
-                            'failed': 0,
-                            'total': 0
-                        }
-                    }
-                else:
-                    if t_rbs not in stats_dict[t_mcs]:
-                        stats_dict[t_mcs][t_rbs] = {
-                            'bytes': {},
-                            'retx': [0,0,0,0],
-                            'failed': 0,
-                            'total': 0
-                        }
-
-                if t_bytes not in stats_dict[t_mcs][t_rbs]['bytes']:
-                    stats_dict[t_mcs][t_rbs]['bytes'][t_bytes] = 1
-                else:
-                    stats_dict[t_mcs][t_rbs]['bytes'][t_bytes] += 1
-
-                stats_dict[t_mcs][t_rbs]['retx'][t_num_retx] += 1
-                stats_dict[t_mcs][t_rbs]['failed'] += t_failed
-                stats_dict[t_mcs][t_rbs]['total'] += 1
-
-        seg_retx_num_list = np.concatenate((seg_retx_num_list, np.array(this_db_seg_retx_num)))
-        seg_failed_list = np.concatenate((seg_failed_list, np.array(this_db_seg_failed)))
-        seg_mcs_list = np.concatenate((seg_mcs_list, np.array(this_db_seg_mcs)))
-        seg_num_rbs_list = np.concatenate((seg_num_rbs_list, np.array(this_db_seg_num_rbs)))
-        seg_num_bytes_list = np.concatenate((seg_num_bytes_list, np.array(this_db_seg_num_bytes)))
-
-    print(stats_dict)
-
-    with open(results_folder_addr / 'retx_stats.json', 'w') as f:
-        json.dump(stats_dict, f, indent=4)
-    
-
-    
-def create_training_dataset(args):
+def create_training_dataset_chan_based(args):
     """
     Create a training dataset
     """
@@ -657,8 +504,6 @@ def create_training_dataset(args):
 
     # decide about dimensions first and time_bounds
     # determine dim_process_mcs, min_mcs, max_mcs, time_bounds, and stream_rntis
-    dim_process_mcs = 0
-    min_mcs, max_mcs = np.inf, -np.inf
     db_id = 0
     time_bounds = []
     stream_rntis = []
@@ -680,38 +525,13 @@ def create_training_dataset(args):
             return
         stream_rnti = list(packets_rnti_set)[0]
         stream_rntis.append(stream_rnti)
-
-        # extract MCS value time series
-        mcs_list = chan_analyzer.find_mcs_from_ts(begin_ts,end_ts)
-        mcs_list = [item for item in mcs_list if item['rnti'] == stream_rnti]
-        set_mcs = set([item['mcs'] for item in mcs_list])
-        logger.info(f"Database id: {db_id}, MCSs in this experiment, min: {min(set_mcs)}, max: {max(set_mcs)}, MCSs: {set_mcs}")
-        min_mcs = min(min_mcs, min(set_mcs))
-        max_mcs = max(max_mcs, max(set_mcs))
-        dim_process_mcs = max_mcs-min_mcs+1
         db_id += 1
-    logger.success(f"MCS dimensions, min: {min_mcs}, max: {max_mcs}, dim_process_mcs: {dim_process_mcs}")
 
     # create prefinal list of events
-    # event types: 
-    # we have 4 rounds of retransmission: {0,1,2,3}
-    # we have successful or unsuccessful RLC segment {0,1}
-    # we use (total_hqrounds-1)+(rlc_failed*4) to map the event types to a unique number between 0 and 7
-    # in total it is 8 types of events
-    # then we have dim_process_mcs different MCS events
-    # we use (mcs_value - min_mcs) to map the mcs event types to a unique number between 0 and (dim_process_mcs-1)
-    # then add it to dim_process_no_mcs to get the final event type
-    # so the final event type is: dim_process_no_mcs + (mcs_value - min_mcs)
-    # in total it is dim_process_mcs types of events
-    dim_process_no_mcs = 8
-    dim_process = dim_process_no_mcs+dim_process_mcs
-
+    # event types: 0: retransmissions, 1: mcs change
+    dim_process = 2
     dataset_config = {
         "stream_rntis" : stream_rntis,
-        "min_mcs": int(min_mcs),
-        "max_mcs": int(max_mcs),
-        "dim_process_mcs": int(dim_process_mcs),
-        "dim_process_no_mcs": int(dim_process_no_mcs),
         "dim_process": int(dim_process),
         **dataset_config
     }
@@ -723,17 +543,17 @@ def create_training_dataset(args):
         json_obj = json.dumps(dataset_config, indent=4)
         f.write(json_obj)
 
-    link_retransmission_events_arr, link_mcs_events_arr = extract_link_quality_events(result_database_files, time_bounds, stream_rntis, exp_config, dim_process_no_mcs, min_mcs, dtime_max)
+    link_retransmission_events_arr, link_mcs_events_arr = extract_link_quality_events_chan_based(result_database_files, time_bounds, stream_rntis, exp_config, dtime_max)
 
     dataset = []
     for link_retransmission_events, link_mcs_events in zip(link_retransmission_events_arr, link_mcs_events_arr):
 
         if window_config['type'] == 'time':
-            one_db_dataset = create_training_dataset_time_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, dataset_config)
+            one_db_dataset = create_training_dataset_chan_based_time_window(link_retransmission_events, link_mcs_events, dataset_config)
         elif window_config['type'] == 'event':
-            one_db_dataset = create_training_dataset_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, dataset_config)
+            one_db_dataset = create_training_dataset_chan_based_event_window(link_retransmission_events, link_mcs_events, dataset_config)
         elif window_config['type'] == 'mcs_event':
-            one_db_dataset = create_training_dataset_mcs_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, dataset_config)
+            one_db_dataset = create_training_dataset_chan_based_mcs_event_window(link_retransmission_events, link_mcs_events, dataset_config)
         else:
             logger.error("Invalid window type")
 
@@ -755,8 +575,6 @@ def create_training_dataset(args):
     print("train: ", train_num, " - dev: ", dev_num)
     # train
     train_ds = {
-        'dim_process_no_mcs' : int(dim_process_no_mcs),
-        'min_mcs' : int(min_mcs),
         'dim_process' : int(dim_process),
         'train' : dataset[0:train_num],
     }
@@ -766,8 +584,6 @@ def create_training_dataset(args):
         pickle.dump(train_ds, f)
     # dev
     dev_ds = {
-        'dim_process_no_mcs' : int(dim_process_no_mcs),
-        'min_mcs' : int(min_mcs),
         'dim_process' : dim_process,
         'dev' : dataset[train_num:train_num+dev_num],
     }
@@ -776,8 +592,6 @@ def create_training_dataset(args):
     with open(results_folder_addr / 'dev.pkl', 'wb') as f:
         pickle.dump(dev_ds, f)
     test_ds = {
-        'dim_process_no_mcs' : int(dim_process_no_mcs),
-        'min_mcs' : int(min_mcs),
         'dim_process' : dim_process,
         'test' : dataset[train_num+dev_num:-1],
     }
@@ -787,7 +601,7 @@ def create_training_dataset(args):
         pickle.dump(test_ds, f)
 
 
-def extract_link_quality_events(result_database_files, time_bounds, stream_rntis, exp_config, dim_process_no_mcs, min_mcs, dtime_max):
+def extract_link_quality_events_chan_based(result_database_files, time_bounds, stream_rntis, exp_config, dtime_max):
     
     slots_duration_ms = exp_config['slots_duration_ms']
     num_slots_per_frame = exp_config['slots_per_frame']
@@ -853,8 +667,12 @@ def extract_link_quality_events(result_database_files, time_bounds, stream_rntis
         prefinal_mcs_events_list = []
         for item in mcs_change_events_list:
             prefinal_mcs_events_list.append({
-                'type_event' : dim_process_no_mcs+int(item['mcs'] - min_mcs),
-                'timestamp' : item['timestamp']
+                'type_event' : 1,
+                'mcs_index' : item['mcs'],
+                'timestamp' : item['timestamp'],
+                'rfailed' : 2, # padding
+                'mretx' : 4, # padding
+                'num_rbs': 106 # padding
             })
 
         # sort the mcs events based on timestamp
@@ -885,7 +703,11 @@ def extract_link_quality_events(result_database_files, time_bounds, stream_rntis
                     'type_event' : item['type_event'],
                     'time_since_start' : time_since_frame0,
                     'time_since_last_event' : time_since_last_event,
-                    'timestamp' : item['timestamp']
+                    'timestamp' : item['timestamp'],
+                    'rfailed': item['rfailed'],
+                    'mretx': item['mretx'],
+                    'mcs_index' : item['mcs_index'],
+                    'num_rbs': item['num_rbs']
                 }
             )
         link_mcs_events_arr.append(link_mcs_events)
@@ -896,10 +718,17 @@ def extract_link_quality_events(result_database_files, time_bounds, stream_rntis
             if len(mcs_reports) == 0:
                 continue
             mcs_index = mcs_reports[-1]['mcs']
+            if not (int(item['num_rbs']) > 0):
+                logger.warning(f"Number of RBs is nonsense, skipping the event")
+                continue
+
             prefinal_events_list.append({
-                'type_event' : int((item['total_hqrounds']-1)+(int(item['rlc_failed'])*4)),
+                'type_event' : 0, # retx event
                 'timestamp' : item['timestamp'],
-                'mcs_index' : mcs_index
+                'mcs_index' : mcs_index,
+                'rfailed' : int(item['rlc_failed']),
+                'mretx' : int(item['total_hqrounds']),
+                'num_rbs': int(item['num_rbs']),
             })
 
         # sort the events based on timestamp
@@ -931,14 +760,17 @@ def extract_link_quality_events(result_database_files, time_bounds, stream_rntis
                     'time_since_start' : time_since_frame0,
                     'time_since_last_event' : time_since_last_event,
                     'timestamp' : item['timestamp'],
-                    'mcs_index' : item['mcs_index']
+                    'mcs_index' : item['mcs_index'],
+                    'rfailed' : item['rfailed'],
+                    'mretx' : item['mretx'],
+                    'num_rbs': item['num_rbs']
                 }
             )
         link_retransmission_events_arr.append(link_retransmission_events)
 
     return link_retransmission_events_arr, link_mcs_events_arr
 
-def create_training_dataset_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, dataset_config):
+def create_training_dataset_chan_based_event_window(link_retransmission_events, link_mcs_events, dataset_config):
     
     # select the source configuration
     window_config = dataset_config['window_config']
@@ -954,30 +786,19 @@ def create_training_dataset_event_window(link_retransmission_events, link_mcs_ev
             break
         events_window = []
         for pos, event in enumerate(sorted_link_events[idx:idx+history_window_size]):
-            idx_event = pos
-            if event['type_event'] >= dim_process_no_mcs:
-                # MCS event
-                events_window.append(
-                    {
-                        'idx_event' : pos,
-                        'type_event': event['type_event'],
-                        'time_since_start' : event['time_since_start'],
-                        'time_since_last_event' : event['time_since_last_event'],
-                        'mcs_index' : None
-                    }
-                )   
-            else:
-                # retransmission event
-                events_window.append(
-                    {
-                        'idx_event' : pos,
-                        'type_event': event['type_event'],
-                        'time_since_start' : event['time_since_start'],
-                        'time_since_last_event' : event['time_since_last_event'],
-                        'mcs_index' : event['mcs_index']
-                    }
-                )        
-
+            events_window.append(
+                {
+                    'idx_event' : pos,
+                    'type_event': event['type_event'],
+                    'time_since_start' : event['time_since_start'],
+                    'time_since_last_event' : event['time_since_last_event'],
+                    'mcs_index' : event['mcs_index'],
+                    'rfailed' : event['rfailed'],
+                    'mretx' : event['mretx'],
+                    'num_rbs': event['num_rbs']
+                }
+            )   
+    
         #print(events)
         dataset.append(events_window)
         if len(dataset) > dataset_size_max:
@@ -986,7 +807,7 @@ def create_training_dataset_event_window(link_retransmission_events, link_mcs_ev
     return dataset
 
 
-def create_training_dataset_mcs_event_window(link_retransmission_events, link_mcs_events, dim_process_no_mcs, dataset_config):
+def create_training_dataset_chan_based_mcs_event_window(link_retransmission_events, link_mcs_events, dataset_config):
 
     # select the source configuration
     window_config = dataset_config['window_config']
@@ -1003,34 +824,24 @@ def create_training_dataset_mcs_event_window(link_retransmission_events, link_mc
             break
  
         # find if the last event is not MCS, and ignore it and go to the next event
-        if sorted_link_events[idx-1]['type_event'] < dim_process_no_mcs:
+        if sorted_link_events[idx-1]['type_event'] == 0:
             continue
  
         events_window = []
         for pos, event in enumerate(sorted_link_events[idx-history_window_size:idx]):
-            idx_event = pos
-            if event['type_event'] >= dim_process_no_mcs:
-                # MCS event
-                events_window.append(
-                    {
-                        'idx_event' : pos,
-                        'type_event': event['type_event'],
-                        'time_since_start' : event['time_since_start'],
-                        'time_since_last_event' : event['time_since_last_event'],
-                        'mcs_index' : None
-                    }
-                )   
-            else:
-                # retransmission event
-                events_window.append(
-                    {
-                        'idx_event' : pos,
-                        'type_event': event['type_event'],
-                        'time_since_start' : event['time_since_start'],
-                        'time_since_last_event' : event['time_since_last_event'],
-                        'mcs_index' : event['mcs_index']
-                    }
-                )        
+            events_window.append(
+                {
+                    'idx_event' : pos,
+                    'type_event': event['type_event'],
+                    'time_since_start' : event['time_since_start'],
+                    'time_since_last_event' : event['time_since_last_event'],
+                    'mcs_index' : event['mcs_index'],
+                    'rfailed' : event['rfailed'],
+                    'mretx' : event['mretx'],
+                    'num_rbs': event['num_rbs']
+                }
+            )   
+     
 
         dataset.append(events_window)
         if len(dataset) > dataset_size_max:
@@ -1039,19 +850,22 @@ def create_training_dataset_mcs_event_window(link_retransmission_events, link_mc
     return dataset
 
 
-def create_training_dataset_time_window(link_retransmission_events, link_mcs_events, dim_process, dataset_config):
+def create_training_dataset_chan_based_time_window(link_retransmission_events, link_mcs_events, dataset_config):
 
     # select the source configuration
     window_config = dataset_config['window_config']
     history_window_size = window_config['size']
     dataset_size_max = dataset_config['dataset_size_max']
 
+    link_events = [ *link_retransmission_events, *link_mcs_events ]
+    sorted_link_events = sorted(link_events, key=lambda x: x['timestamp'], reverse=False)
+
     stop = False
     dataset = []
-    for first_event_idx, first_event in enumerate(link_retransmission_events):
+    for first_event_idx, first_event in enumerate(sorted_link_events):
         events_window = []
         pos = 0
-        for next_event_idx, next_event in enumerate(link_retransmission_events[first_event_idx:]):
+        for next_event_idx, next_event in enumerate(sorted_link_events[first_event_idx:]):
             if (next_event['timestamp']-first_event['timestamp']) > history_window_size:
                 break
             events_window.append(
@@ -1060,11 +874,14 @@ def create_training_dataset_time_window(link_retransmission_events, link_mcs_eve
                     'type_event': next_event['type_event'],
                     'time_since_start' : next_event['time_since_start'],
                     'time_since_last_event' : next_event['time_since_last_event'],
-                    'mcs_index' : next_event['mcs_index']
+                    'mcs_index' : next_event['mcs_index'],
+                    'rfailed' : next_event['rfailed'],
+                    'mretx' : next_event['mretx'],
+                    'num_rbs': next_event['num_rbs']
                 }
             )
             pos += 1
-            if next_event_idx+first_event_idx >= len(link_retransmission_events)-1:
+            if next_event_idx+first_event_idx >= len(sorted_link_events)-1:
                 stop = True
                 break
         dataset.append(events_window)
