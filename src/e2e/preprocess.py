@@ -202,52 +202,6 @@ def plot_data(args):
     fig.write_html(str(results_folder_addr / 'combined_plot.html'))
 
 
-# load this:
-"""
-    "s63_e2e" : {
-        "time_masks": [
-            [0.85,0.9]
-        ],
-        "num_future_packets": 100,
-        "arrival" : {
-            "window_config": {
-                "type": "event",
-                "size": 10
-            }
-        },
-        "scheduling": {
-            "window_config": {
-                "type": "event",
-                "size": 10,
-                "max_num_segments": 5
-            }
-        },
-        "mcs" : {
-            "filter_successful_attempts": true,
-            "mcs_event_type": "decision",
-            "mcs_eval_interval_ms" : 100,
-            "window_config": {
-                "type": "mcs_event",
-                "size": 100
-            }
-        },
-        "retx" : {
-            "filter_successful_attempts": false,
-            "window_config": {
-                "type": "block_event",
-                "size": 100
-            }
-        },
-        "dataset_size_max": 50000,
-        "split_ratios": [
-            0.8,
-            0.1,
-            0.1
-        ],
-        "dtime_max" : 50
-    }
-"""
-
 def find_event(input_event, list_of_events, condition = None):
     closest_event_index, closest_event = min(
         enumerate(list_of_events), 
@@ -297,13 +251,6 @@ def find_next_event_after_input(input_event, list_of_events, condition = None):
         logger.error("Could not find any event before the input event.")
         return None, None
     return next_event, next_event_index
-
-
-def window_history_retx_events(segment_event_l1, segment_events, retx_dataset_config):
-    pass
-
-def window_history_mcs_events(mcs_event_k1, mcs_events, segment_events, mcs_dataset_config):
-    pass
 
 
 def create_training_dataset(args):
