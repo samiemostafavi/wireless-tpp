@@ -201,6 +201,10 @@ class TPPRunnerLinkQuality():
         model_name = self.runner_config.base_config.model_id
         logger.info(f'Start {model_name} evaluation...')
 
+        kwargs.update({
+            'model_is_retx': self.runner_config.model_config.model_specs['model_is_retx']
+        })
+
         model = self._gen_model(
             gen_loader,
             **kwargs
@@ -354,9 +358,9 @@ class TPPRunnerLinkQuality():
         """
         
         if kwargs.get('probability_generation', False):
-            test_result = self.run_one_epoch_probability_generation(data_loader, RunnerPhase.PREDICT)
+            test_result = self.run_one_epoch_probability_generation(data_loader, RunnerPhase.PREDICT, kwargs)
         else:
-            test_result = self.run_one_epoch_sample_generation(data_loader, RunnerPhase.PREDICT)
+            test_result = self.run_one_epoch_sample_generation(data_loader, RunnerPhase.PREDICT, kwargs)
         
         if kwargs.get('return_predictions', False):
             return test_result
@@ -583,7 +587,7 @@ class TPPRunnerLinkQuality():
         return metrics_dict
 
 
-    def run_one_epoch_probability_generation(self, data_loader, phase):
+    def run_one_epoch_probability_generation(self, data_loader, phase, kwargs):
         """Run one complete epoch and store the intensity values.
 
         Args:
@@ -601,8 +605,12 @@ class TPPRunnerLinkQuality():
         if phase is not RunnerPhase.PREDICT:
             return
         
+        model_is_retx = kwargs['model_is_retx']
         for batch in data_loader:
-            batch_probs, batch_label, batch_mask = self.model_wrapper.run_batch_probability_generation_mcs(batch, phase=phase)
+            if model_is_retx:
+                batch_probs, batch_label, batch_mask = self.model_wrapper.run_batch_probability_generation_retx(batch, phase=phase)
+            else:
+                batch_probs, batch_label, batch_mask = self.model_wrapper.run_batch_probability_generation_mcs(batch, phase=phase)
             probs_pred.append(batch_probs)
             epoch_label.append(batch_label)
             masks.append(batch_mask)
@@ -612,7 +620,7 @@ class TPPRunnerLinkQuality():
 
         return metrics_dict
     
-    def run_one_epoch_sample_generation(self, data_loader, phase):
+    def run_one_epoch_sample_generation(self, data_loader, phase, kwargs):
         """Run one complete epoch and store the intensity values.
 
         Args:
@@ -630,8 +638,12 @@ class TPPRunnerLinkQuality():
         if phase is not RunnerPhase.PREDICT:
             return
         
+        model_is_retx = kwargs['model_is_retx']
         for batch in data_loader:
-            batch_samples, batch_label, batch_mask = self.model_wrapper.run_batch_sample_generation_mcs(batch, phase=phase)
+            if model_is_retx:
+                batch_samples, batch_label, batch_mask = self.model_wrapper.run_batch_sample_generation_retx(batch, phase=phase)
+            else:
+                batch_samples, batch_label, batch_mask = self.model_wrapper.run_batch_sample_generation_mcs(batch, phase=phase)
             samples_pred.append(batch_samples)
             epoch_label.append(batch_label)
             masks.append(batch_mask)

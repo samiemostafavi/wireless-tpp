@@ -461,3 +461,167 @@ class SingleStepMCS(TorchBaseModel):
         num_events = event_mask.sum().item()
 
         return (mcs_samples, None), (dtime_seqs, time_seqs, type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), event_mask, num_events
+    
+
+class SingleStepMCSPrior(TorchBaseModel):
+    """Torch implementation of MDN Learning of Temporal Point Processes
+    """
+
+    def __init__(self, model_config):
+        """Initialize the model
+
+        Args:
+            model_config (EasyTPP.ModelConfig): config of model specs.
+
+        """
+        super(SingleStepMCSPrior, self).__init__(model_config)
+
+        self.use_norm = model_config.use_ln
+        self.dropout = model_config.dropout_rate
+
+        # mcs embedding
+        self.num_mcs_types = 30  # MCS indices: 0 to 28 (29 types), and padding token
+        self.mcs_pad_id = 29
+        
+        # MCS prediction linear layer
+        self.linear = nn.Parameter(torch.empty(self.num_mcs_types, device=self.device))
+        nn.init.uniform_(self.linear, a=0.0, b=1.0)
+    
+
+    def loglike_loss(self, batch):
+        """Compute the loglike loss.
+
+        Args:
+            batch (list): batch input.
+
+        Returns:
+            tuple: loglikelihood loss and num of events.
+        """
+        time_seqs, dtime_seqs, type_seqs, mcs_seqs, num_rbs_seqs, mretx_seqs, rfailed_seqs, batch_non_pad_mask, attention_mask = batch
+
+        batch_size, seq_len = mcs_seqs[:, :-1].shape
+
+        # Unsqueeze to add batch and sequence dimensions
+        # Shape: [1, 1, num_marks]
+        expanded_linear = self.linear.unsqueeze(0).unsqueeze(0)  
+
+        # Repeat the tensor across batch and sequence dimensions
+        # Shape: [batch_size, seq_len, num_marks]
+        mcs_logits = expanded_linear.repeat(batch_size, seq_len, 1)
+        
+        event_mask = batch_non_pad_mask[:, -1:]
+        label_mcs = mcs_seqs[:, -1:]
+        mcs_dist = Categorical(logits=mcs_logits)
+        mcs_ll = mcs_dist.log_prob(label_mcs) * event_mask
+
+        # [batch_size,]
+        loss = -mcs_ll.sum()
+
+        num_events = event_mask.sum().item()
+        return loss, num_events
+
+
+    def predict_mean_variance(self, batch, forward=False):
+        """One-step probabilities prediction for the last event in the sequence.
+
+        Args:
+            time_seqs (tensor): [batch_size, seq_len].
+            time_delta_seqs (tensor): [batch_size, seq_len].
+            type_seqs (tensor): [batch_size, seq_len].
+
+        Returns:
+            tuple: tensors of dtime and type prediction, [batch_size, seq_len].
+        """
+        time_seqs, dtime_seqs, type_seqs, mcs_seqs, num_rbs_seqs, mretx_seqs, rfailed_seqs, batch_non_pad_mask, attention_mask = batch
+
+        batch_size, seq_len = mcs_seqs[:, :-1].shape
+
+        # Unsqueeze to add batch and sequence dimensions
+        # Shape: [1, 1, num_marks]
+        expanded_linear = self.linear.unsqueeze(0).unsqueeze(0)  
+
+        # Repeat the tensor across batch and sequence dimensions
+        # Shape: [batch_size, seq_len, num_marks]
+        mcs_logits = expanded_linear.repeat(batch_size, seq_len, 1)
+        
+        event_mask = batch_non_pad_mask[:, -1:]
+        label_mcs = mcs_seqs[:, -1:]
+        mcs_dist = Categorical(logits=mcs_logits)
+
+        # Calculate mean and variance manually
+        indices = torch.arange(self.num_mcs_types, dtype=mcs_dist.probs.dtype, device=mcs_dist.probs.device)  # [0, 1, ..., n-1]
+
+        # Mean
+        pred_mcs = torch.sum(mcs_dist.probs * indices, dim=-1, keepdim=True)  # [batch_size, 1]
+        # output shape here is [batch_size, 1, 1]
+
+        # Variance
+        pred_var = torch.sum(mcs_dist.probs * (indices ** 2), dim=-1, keepdim=True) - pred_mcs ** 2  # [batch_size, 1]
+        # output shape here is [batch_size, 1, 1]
+
+        num_events = event_mask.sum().item()
+        return (pred_mcs[...,0,0],pred_var[...,0,0]), (None, None), (label_mcs[...,0], None), event_mask[...,0], num_events
+
+
+    def predict_probabilities(self, batch, prediction_config, forward=False):
+        """One-step probabilities prediction for the last event in the sequence.
+
+        Args:
+            time_seqs (tensor): [batch_size, seq_len].
+            time_delta_seqs (tensor): [batch_size, seq_len].
+            type_seqs (tensor): [batch_size, seq_len].
+
+        Returns:
+            tuple: tensors of dtime and type prediction, [batch_size, seq_len].
+        """
+        time_seqs, dtime_seqs, type_seqs, mcs_seqs, num_rbs_seqs, mretx_seqs, rfailed_seqs, batch_non_pad_mask, attention_mask = batch
+
+        batch_size, seq_len = mcs_seqs[:, :-1].shape
+
+        # Unsqueeze to add batch and sequence dimensions
+        # Shape: [1, 1, num_marks]
+        expanded_linear = self.linear.unsqueeze(0).unsqueeze(0)  
+
+        # Repeat the tensor across batch and sequence dimensions
+        # Shape: [batch_size, seq_len, num_marks]
+        mcs_logits = expanded_linear.repeat(batch_size, seq_len, 1)
+
+        # [batch_size, seq_len]
+        mcs_logprobs = torch.log_softmax(mcs_logits, dim=-1)
+        
+        event_mask = batch_non_pad_mask[:, -1:]
+        num_events = event_mask.sum().item()
+
+        return (mcs_logprobs, None), (dtime_seqs, time_seqs, type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), event_mask, num_events
+
+        
+    def generate_samples(self, batch, prediction_config, forward=False):
+        """One-step probabilities prediction for the last event in the sequence.
+
+        Args:
+            time_seqs (tensor): [batch_size, seq_len].
+            time_delta_seqs (tensor): [batch_size, seq_len].
+            type_seqs (tensor): [batch_size, seq_len].
+
+        Returns:
+            tuple: tensors of dtime and type prediction, [batch_size, seq_len].
+        """
+        time_seqs, dtime_seqs, type_seqs, mcs_seqs, num_rbs_seqs, mretx_seqs, rfailed_seqs, batch_non_pad_mask, attention_mask = batch
+
+        batch_size, seq_len = mcs_seqs[:, :-1].shape
+
+        # Unsqueeze to add batch and sequence dimensions
+        # Shape: [1, 1, num_marks]
+        expanded_linear = self.linear.unsqueeze(0).unsqueeze(0)  
+
+        # Repeat the tensor across batch and sequence dimensions
+        # Shape: [batch_size, seq_len, num_marks]
+        mcs_logits = expanded_linear.repeat(batch_size, seq_len, 1)
+
+        mcs_dist = Categorical(logits=mcs_logits)
+        mcs_samples = mcs_dist.sample((prediction_config['num_samples_mcs'],))
+
+        event_mask = batch_non_pad_mask[:, -1:]
+        num_events = event_mask.sum().item()
+
+        return (mcs_samples, None), (dtime_seqs, time_seqs, type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), event_mask, num_events

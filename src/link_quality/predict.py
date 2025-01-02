@@ -85,7 +85,7 @@ def generate_predictions(args):
                 "loss_integral_num_sample_per_step": training_output_config['model_config']['loss_integral_num_sample_per_step'],
                 "use_ln": training_output_config['model_config']['use_ln'],
                 "pretrained_model_dir": training_output_config['base_config']['specs']['saved_model_dir'],
-                "thinning": prediction_config['thinning'],
+                "thinning": prediction_config['thinning'] if 'thinning' in prediction_config else {},
                 "noise_regularization": training_output_config['model_config']['noise_regularization'] if 'noise_regularization' in training_output_config['model_config'] else {} 
             },
             "prediction_config" : prediction_config
@@ -115,10 +115,14 @@ def plot_predictions(args):
         data = pickle.load(file)
 
     mcs_eval_interval_ms = 100
-    model_id = generation_output_config['base_config']['model_id']
-    if generation_output_config['prediction_config']['method'] == 'probabilistic':
+    model_is_retx = generation_output_config['model_config']['model_specs']['model_is_retx']
+    if model_is_retx and generation_output_config['prediction_config']['method'] == 'probabilistic':
+        plot_retx_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
+    elif (not model_is_retx) and generation_output_config['prediction_config']['method'] == 'probabilistic':
         plot_mcs_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
-    elif generation_output_config['prediction_config']['method'] == 'sampling':
+    elif model_is_retx and generation_output_config['prediction_config']['method'] == 'sampling':
+        plot_retx_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, args)
+    elif (not model_is_retx) and generation_output_config['prediction_config']['method'] == 'sampling':
         plot_mcs_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, mcs_eval_interval_ms, args)
 
 
@@ -208,6 +212,177 @@ def plot_mcs_probability_predictions_1D(dataset_config, generation_output_config
 
     # Write the plot to an HTML file
     fig.write_html(model_path / "pred_probabilities_mcs.html")
+
+
+def plot_retx_probability_predictions_1D(dataset_config, generation_output_config, data, model_path, args):
+
+    # history data
+    h_dtime, h_time, h_event_type, h_mcs, h_mretx, h_rfailed, h_num_rbs = [],[],[],[],[],[],[]
+    for batch in data['label']:
+        h_dtime.append(batch[0])
+        h_time.append(batch[1])
+        h_event_type.append(batch[2])
+        h_mcs.append(batch[3])
+        h_mretx.append(batch[4])
+        h_rfailed.append(batch[5])
+        h_num_rbs.append(batch[6])
+
+    ch_dtime = np.concatenate(h_dtime, axis=0)
+    ch_time = np.concatenate(h_time, axis=0)
+    ch_event_type = np.concatenate(h_event_type, axis=0)
+    ch_mcs = np.concatenate(h_mcs, axis=0)
+    ch_mretx = np.concatenate(h_mretx, axis=0)
+    ch_rfailed = np.concatenate(h_rfailed, axis=0)
+    ch_num_rbs = np.concatenate(h_num_rbs, axis=0)
+
+    # data['pred'] dimensions: [num batches, 1 , batch size, num probability samples]
+    p_retx = []
+    p_rfailed = []
+    for batch in data['pred']:
+        p_retx.append(batch[0])
+        p_rfailed.append(batch[1])
+    cp_retx = np.concatenate(p_retx, axis=0)
+    cp_rfailed = np.concatenate(p_rfailed, axis=0)
+
+    # Here history data dimensions are: [total number of samples, seq length]
+    # and prediction data dimensions are: [total number of samples, num probability samples]
+    # total number of samples is the sum of all batch sizes
+
+    # lets pick a sample and plot
+    max_index = ch_dtime.shape[0]
+
+    ar_index = np.random.randint(0, max_index, size=1)[0]
+    assert ar_index < max_index, f"Index out of range: {ar_index} > {max_index}"
+
+    # [seq length]
+    ch_dtime = ch_dtime[ar_index,:]
+    ch_time = ch_time[ar_index,:]
+    ch_event_type = ch_event_type[ar_index,:]
+    ch_mcs = ch_mcs[ar_index,:]
+    ch_mretx = ch_mretx[ar_index,:]
+    ch_rfailed = ch_rfailed[ar_index,:]
+    ch_num_rbs = ch_num_rbs[ar_index,:]
+
+    #logger.info(f"Event types in the history plus the label: {ch_event_type}")
+
+    # [num probability samples]
+    cp_retx = np.exp(cp_retx[ar_index,:])
+    cp_rfailed = np.exp(cp_rfailed[ar_index,:])
+
+    # history segments time series
+    segment_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime)])
+    segment_rfailed_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime)])
+    segment_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime)])
+    segment_num_rbs_list = np.array([ch_num_rbs[idx] for idx, _ in enumerate(ch_dtime) ])
+    segment_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime)])
+
+    # Create a subplot figure with 1 row
+    fig = make_subplots(rows=2, cols=1, subplot_titles=("Predictions"))
+
+    # history block events
+    fig.add_trace(go.Scatter(x=segment_ts_list[:-1], y=np.ones(len(segment_ts_list[:-1])), mode='markers+text', name='Block event (history)', marker=dict(symbol='circle'), text=[f"{x},{y}" for x, y in zip(segment_mrtx_list[:-1], segment_rfailed_list[:-1])], textposition='top center', showlegend=False), row=1, col=1)
+    fig.add_trace(go.Scatter(x=segment_ts_list[:-1], y=np.ones(len(segment_ts_list[:-1])), mode='markers+text', name='Block event (history)', marker=dict(symbol='circle'), text=[f"{x},{y}" for x, y in zip(segment_mcs_list[:-1], segment_num_rbs_list[:-1])], textposition='bottom center'), row=1, col=1)
+
+    # label block event
+    fig.add_trace(go.Scatter(x=segment_ts_list[-1:], y=np.ones(len(segment_ts_list[-1:])), mode='markers+text', name='Block event (label)', marker=dict(symbol='square'), text=[f"{x},{y}" for x, y in zip(segment_mrtx_list[-1:], segment_rfailed_list[-1:])], textposition='top center', showlegend=False), row=1, col=1)
+    fig.add_trace(go.Scatter(x=segment_ts_list[-1:], y=np.ones(len(segment_ts_list[-1:])), mode='markers+text', name='Block event (label)', marker=dict(symbol='square'), text=[f"{x},{y}" for x, y in zip(segment_mcs_list[-1:], segment_num_rbs_list[-1:])], textposition='bottom center'), row=1, col=1)
+
+    # prediction probabilities
+    fig.add_trace(go.Scatter(x=np.arange(len(cp_retx[0,:])), y=cp_retx[0,:], mode='markers', name='Segment retx prediction [rounds]'), row=2, col=1)
+
+    fig.update_xaxes(title_text=f"rfailed prob={cp_rfailed[0,0]}", row=2, col=1)
+
+    fig.update_layout(
+        title='RETX Predictor Validation',
+        legend_title='Legend',
+    )
+
+    # Write the plot to an HTML file
+    fig.write_html(model_path / "pred_probabilities_retx.html")
+
+def plot_retx_sampling_predictions_1D(dataset_config, generation_output_config, data, model_path, args):
+
+    # history data
+    h_dtime, h_time, h_event_type, h_mcs, h_mretx, h_rfailed, h_num_rbs = [],[],[],[],[],[],[]
+    for batch in data['label']:
+        h_dtime.append(batch[0])
+        h_time.append(batch[1])
+        h_event_type.append(batch[2])
+        h_mcs.append(batch[3])
+        h_mretx.append(batch[4])
+        h_rfailed.append(batch[5])
+        h_num_rbs.append(batch[6])
+
+    ch_dtime = np.concatenate(h_dtime, axis=0)
+    ch_time = np.concatenate(h_time, axis=0)
+    ch_event_type = np.concatenate(h_event_type, axis=0)
+    ch_mcs = np.concatenate(h_mcs, axis=0)
+    ch_mretx = np.concatenate(h_mretx, axis=0)
+    ch_rfailed = np.concatenate(h_rfailed, axis=0)
+    ch_num_rbs = np.concatenate(h_num_rbs, axis=0)
+
+    # data['pred'] dimensions: [num batches, 1 , batch size, num probability samples]
+    p_retx = []
+    p_rfailed = []
+    for batch in data['pred']:
+        p_retx.append(batch[0])
+        p_rfailed.append(batch[1])
+    cp_retx = np.concatenate(p_retx, axis=1)
+    cp_rfailed = np.concatenate(p_rfailed, axis=1)
+
+    # Here history data dimensions are: [total number of samples, seq length]
+    # and prediction data dimensions are: [total number of samples, num probability samples]
+    # total number of samples is the sum of all batch sizes
+
+    # lets pick a sample and plot
+    max_index = ch_dtime.shape[0]
+
+    ar_index = np.random.randint(0, max_index, size=1)[0]
+    assert ar_index < max_index, f"Index out of range: {ar_index} > {max_index}"
+
+    # [seq length]
+    ch_dtime = ch_dtime[ar_index,:]
+    ch_time = ch_time[ar_index,:]
+    ch_event_type = ch_event_type[ar_index,:]
+    ch_mcs = ch_mcs[ar_index,:]
+    ch_mretx = ch_mretx[ar_index,:]
+    ch_rfailed = ch_rfailed[ar_index,:]
+    ch_num_rbs = ch_num_rbs[ar_index,:]
+
+    #logger.info(f"Event types in the history plus the label: {ch_event_type}")
+
+    # [num probability samples]
+    cp_retx = np.mean(cp_retx[:,ar_index,0])
+    cp_rfailed = np.mean(cp_rfailed[:,ar_index,0])
+
+    # history segments time series
+    segment_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime)])
+    segment_rfailed_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime)])
+    segment_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime)])
+    segment_num_rbs_list = np.array([ch_num_rbs[idx] for idx, _ in enumerate(ch_dtime) ])
+    segment_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime)])
+
+    # Create a subplot figure with 1 row
+    fig = make_subplots(rows=1, cols=1, subplot_titles=("Predictions"))
+
+    # history block events
+    fig.add_trace(go.Scatter(x=segment_ts_list[:-1], y=np.ones(len(segment_ts_list[:-1])), mode='markers+text', name='Block event (history)', marker=dict(symbol='circle'), text=[f"{x},{y}" for x, y in zip(segment_mrtx_list[:-1], segment_rfailed_list[:-1])], textposition='top center', showlegend=False), row=1, col=1)
+    fig.add_trace(go.Scatter(x=segment_ts_list[:-1], y=np.ones(len(segment_ts_list[:-1])), mode='markers+text', name='Block event (history)', marker=dict(symbol='circle'), text=[f"{x},{y}" for x, y in zip(segment_mcs_list[:-1], segment_num_rbs_list[:-1])], textposition='bottom center'), row=1, col=1)
+
+    # label block event
+    fig.add_trace(go.Scatter(x=segment_ts_list[-1:], y=np.zeros(len(segment_ts_list[-1:])), mode='markers+text', name='Block event (label)', marker=dict(symbol='square'), text=[f"{x},{y}" for x, y in zip(segment_mrtx_list[-1:], segment_rfailed_list[-1:])], textposition='top center', showlegend=False), row=1, col=1)
+    fig.add_trace(go.Scatter(x=segment_ts_list[-1:], y=np.zeros(len(segment_ts_list[-1:])), mode='markers+text', name='Block event (label)', marker=dict(symbol='square'), text=[f"{x},{y}" for x, y in zip(segment_mcs_list[-1:], segment_num_rbs_list[-1:])], textposition='bottom center'), row=1, col=1)
+
+    # prediction
+    fig.add_trace(go.Scatter(x=segment_ts_list[-1:], y=np.ones(len(segment_ts_list[-1:])), mode='markers+text', name='Block event (label)', marker=dict(symbol='square'), text=[f"{x},{y}" for x, y in zip([cp_retx], [cp_rfailed])], textposition='top center', showlegend=False), row=1, col=1)
+
+    fig.update_layout(
+        title='RETX Predictor Validation',
+        legend_title='Legend',
+    )
+
+    # Write the plot to an HTML file
+    fig.write_html(model_path / "pred_sampling_retx.html")
 
 
 def transform_list(input_list, max_period):
