@@ -316,6 +316,70 @@ class TorchModelWrapper:
         event_mask = event_mask.detach().cpu().numpy()
         return (mcs_logprobs, None), (dtime_seqs, time_seqs, type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), (event_mask, num_events)
 
+    def run_batch_probability_generation_retx(self, batch, phase):
+        """Run one batch get probabilities only for the last event in the sequence
+
+        Args:
+            batch (EasyTPP.BatchEncoding): preprocessed batch data that go into the model.
+            phase (RunnerPhase): a const that defines the stage of model runner.
+
+        Returns:
+            tuple: for training and validation we return loss, prediction and labels;
+            for prediction we return prediction.
+        """
+
+        batch = batch.to(self.device).values()
+        if phase is not RunnerPhase.PREDICT:
+            return None
+    
+        (mretx_prob_pred, rfailed_prob_pred), (dtime_seqs, time_seqs, \
+            type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, \
+            num_rbs_seqs), event_mask, num_events = self.model.predict_probabilities(batch=batch, prediction_config=self.prediction_config)
+        
+        mretx_prob_pred = mretx_prob_pred.detach().cpu().numpy()
+        rfailed_prob_pred = rfailed_prob_pred.detach().cpu().numpy()
+        dtime_seqs = dtime_seqs.detach().cpu().numpy()
+        time_seqs = time_seqs.detach().cpu().numpy()
+        type_seqs = type_seqs.detach().cpu().numpy()
+        mcs_seqs = mcs_seqs.detach().cpu().numpy()
+        mretx_seqs = mretx_seqs.detach().cpu().numpy()
+        rfailed_seqs = rfailed_seqs.detach().cpu().numpy()
+        num_rbs_seqs = num_rbs_seqs.detach().cpu().numpy()
+        event_mask = event_mask.detach().cpu().numpy()
+        return (mretx_prob_pred,rfailed_prob_pred), (dtime_seqs, time_seqs, type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), (event_mask, num_events)
+    
+    def run_batch_sample_generation_retx(self, batch, phase):
+        """Run one batch produce samples only for the last event in the sequence
+
+        Args:
+            batch (EasyTPP.BatchEncoding): preprocessed batch data that go into the model.
+            phase (RunnerPhase): a const that defines the stage of model runner.
+
+        Returns:
+            tuple: for training and validation we return loss, prediction and labels;
+            for prediction we return prediction.
+        """
+
+        batch = batch.to(self.device).values()
+        if phase is not RunnerPhase.PREDICT:
+            return None
+        
+        (mretx_samples, rfailed_samples), (dtime_seqs, time_seqs, \
+            type_seqs,  mcs_seqs, mretx_seqs, rfailed_seqs, \
+            num_rbs_seqs), event_mask, num_events = self.model.generate_samples(batch=batch, prediction_config=self.prediction_config)
+
+        mretx_samples = mretx_samples.detach().cpu().numpy()
+        rfailed_samples = rfailed_samples.detach().cpu().numpy()
+        dtime_seqs = dtime_seqs.detach().cpu().numpy()
+        time_seqs = time_seqs.detach().cpu().numpy()
+        type_seqs = type_seqs.detach().cpu().numpy()
+        mcs_seqs = mcs_seqs.detach().cpu().numpy()
+        mretx_seqs = mretx_seqs.detach().cpu().numpy()
+        rfailed_seqs = rfailed_seqs.detach().cpu().numpy()
+        num_rbs_seqs = num_rbs_seqs.detach().cpu().numpy()
+        event_mask = event_mask.detach().cpu().numpy()
+        return (mretx_samples,rfailed_samples), (dtime_seqs, time_seqs, type_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs), (event_mask, num_events)
+
     
     def run_batch_sample_generation_mcs(self, batch, phase):
         """Run one batch produce samples only for the last event in the sequence

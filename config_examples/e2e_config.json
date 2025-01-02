@@ -1,0 +1,80 @@
+{
+    "time_masks": [
+        [0.89, 0.9]
+    ],
+    "gpu" : -1,
+    "batch_size" : 32,
+    "num_post_scheduling_events" : 30,
+    "num_post_packet_arrival_events" : 5,
+    "num_post_link_quality_events" : 20,
+    "packet_arrival" : {
+        "dataset_name" : "test0",
+        "trained_model_name" : "test0",
+        "trained_model_id" : "1105474_140407072232064_241202-120400",
+        "probability_generation": {
+            "num_steps_dtime": 1000,
+            "sample_dtime_max" : 40.3,
+            "sample_dtime_min" : 39.7,
+            "num_steps_event_type": 100,
+            "sample_event_type_max" : 90,
+            "sample_event_type_min" : 50
+    
+        },
+        "num_samples_dtime": 10,
+        "num_samples_event_type": 10
+    },
+    "link_quality" : {
+        "dataset_name" : "test0",
+        "trained_model_name" : "test0",
+        "trained_model_id" : "1106489_139985643180672_241202-123840",
+        "probability_generation": {
+            "num_steps_dtime": 1000,
+            "sample_dtime_max" : 1000,
+            "sample_dtime_min" : 0,
+            "num_steps_event_type": 100,
+            "sample_event_type_max" : 90,
+            "sample_event_type_min" : 50
+    
+        },
+        "num_samples_dtime": 10,
+        "num_samples_event_type": 10,
+        "thinning": {
+            "num_seq": 70,
+            "num_sample": 1,
+            "num_exp": 1000,
+            "look_ahead_time": 10,
+            "patience_counter": 5,
+            "over_sample_rate": 5,
+            "num_samples_boundary": 20,
+            "dtime_max": 2700,
+            "num_step_gen": 1
+        }
+    },
+    "scheduling" : {
+        "dataset_name" : "test0",
+        "trained_model_name" : "test0",
+        "trained_model_id" : "1112063_140079729623680_241202-162330",
+        "probability_generation": {
+            "num_steps_dtime": 1000,
+            "sample_dtime_max" : 15,
+            "sample_dtime_min" : 0,
+            "num_steps_event_type": 100,
+            "sample_event_type_max" : 90,
+            "sample_event_type_min" : 50
+    
+        },
+        "num_samples_dtime": 10,
+        "num_samples_event_type": 10,
+        "thinning": {
+            "num_seq": 70,
+            "num_sample": 1,
+            "num_exp": 1000,
+            "look_ahead_time": 10,
+            "patience_counter": 5,
+            "over_sample_rate": 5,
+            "num_samples_boundary": 20,
+            "dtime_max": 2700,
+            "num_step_gen": 1
+        }        
+    }
+}

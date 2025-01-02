@@ -11,20 +11,25 @@ data:
       pad_token_id: 6
       padding_strategy: do_not_pad
 
-  s63_linkquality_0:
+  s63_mcs_0:
     data_format: json
-    train_dir:  ./data/s63_results/link_quality/datasets/test0/train.pkl
-    valid_dir:  ./data/s63_results/link_quality/datasets/test0/dev.pkl
-    test_dir:  ./data/s63_results/link_quality/datasets/test0/test.pkl
+    train_dir:  ./data/s63_results/link_quality/datasets/mcs0/train.pkl
+    valid_dir:  ./data/s63_results/link_quality/datasets/mcs0/dev.pkl
+    test_dir:  ./data/s63_results/link_quality/datasets/mcs0/test.pkl
     data_specs:
-      includes_mcs: false
-      mcs_events: true
-      min_mcs: 11
-      num_event_types: 15
-      num_event_types_no_mcs: 8
-      pad_token_id: 15
-      padding_side: right
-      truncation_side: right
+      num_event_types: 2 # max number of segments + 1
+      pad_token_id: 2
+      padding_strategy: do_not_pad
+
+  s63_retx_0:
+    data_format: json
+    train_dir:  ./data/s63_results/link_quality/datasets/retx0/train.pkl
+    valid_dir:  ./data/s63_results/link_quality/datasets/retx0/dev.pkl
+    test_dir:  ./data/s63_results/link_quality/datasets/retx0/test.pkl
+    data_specs:
+      num_event_types: 2 # max number of segments + 1
+      pad_token_id: 2
+      padding_strategy: do_not_pad
 
   s63_packetarrival_0:
     data_format: pkl
@@ -37,13 +42,59 @@ data:
       padding_strategy: do_not_pad
 
 
-IF_train_s63_scheduling_0:
+Arrival_s63_0:
+  base_config:
+    stage: train
+    backend: torch
+    dataset_id: s63_packetarrival_0
+    runner_id: std_tpp
+    model_id: SingleStepArrival
+    base_dir: './data/s63_results/packet_arrival/trained_models/test0/'
+  trainer_config:
+    batch_size: 64
+    max_epoch: 800
+    shuffle: False
+    optimizer: adam
+    learning_rate: 1.e-4
+    valid_freq: 10
+    use_tfb: False
+    metrics: [ 'acc', 'rmse' ]
+    seed: 2019
+    gpu: 0
+  model_config:
+    hidden_size: 16
+    num_layers: 1
+    num_heads: 2
+    use_ln: False
+    dropout_rate: 0.2
+    noise_regularization:
+      dtime:
+        noise_type: 'gaussian'
+        std_dev: 0.1
+      event_type:
+        noise_type: 'gaussian'
+        std_dev: 1
+    model_specs:
+      history:
+        length: 5
+        include_len: True
+      mdn:
+        2d: False
+        num_mix_components_2d: 4
+        num_mix_components_dtime: 4
+        num_mix_components_len: 4
+      embeddings:
+        concat: False
+        len_emb_dim: 4
+
+
+Scheduling_s63_0:
   base_config:
     stage: train
     backend: torch
     dataset_id: s63_scheduling_0
     runner_id: std_tpp
-    model_id: IntensityFreeScheduling
+    model_id: SingleStepScheduling
     base_dir: './data/s63_results/scheduling/trained_models/test0/'
   trainer_config:
     batch_size: 16
@@ -60,30 +111,48 @@ IF_train_s63_scheduling_0:
     hidden_size: 16
     num_layers: 1
     num_heads: 2
-    mc_num_sample_per_step: 20
-    loss_integral_num_sample_per_step: 20
     use_ln: False
     dropout_rate: 0.2
+    noise_regularization:
+      dtime:
+        noise_type: 'gaussian'
+        std_dev: 0.1
+      event_type:
+        noise_type: 'gaussian'
+        std_dev: 1
     model_specs:
-      prior: false
-      num_mix_components: 1
-      include_mcs: False
-      include_mretx: False
-      include_rfailed: False
-      include_len: False
+      history:
+        length: 5
+        include_len: True
+        include_slot: True
+        include_mcs: False
+        include_mretx: False
+        include_rfailed: False
+      mdn:
+        2d: False
+        num_mix_components_2d: 4
+        num_mix_components_dtime: 4
+        num_mix_components_len: 4
+      embeddings:
+        concat: False
+        type_emb_dim: 2
+        len_emb_dim: 4
+        slot_emb_dim: 4 #8
+        mcs_emb_dim: 4 #8
+        mretx_emb_dim: 1
+        rfailed_emb_dim: 1
 
-
-THP_train_s63_linkquality_0:
+MCS_s63_0:
   base_config:
     stage: train
     backend: torch
-    dataset_id: s63_linkquality_0
+    dataset_id: s63_mcs_0
     runner_id: std_tpp
-    model_id: THPLinkQuality
-    base_dir: './data/s63_results/link_quality/trained_models/test0/'
+    model_id: SingleStepMCS
+    base_dir: './data/s63_results/link_quality/trained_models/mcs0/'
   trainer_config:
-    batch_size: 1024
-    max_epoch: 400
+    batch_size: 16
+    max_epoch: 500
     shuffle: False
     optimizer: adam
     learning_rate: 1.e-3
@@ -93,47 +162,72 @@ THP_train_s63_linkquality_0:
     seed: 2019
     gpu: 0
   model_config:
-    hidden_size: 256
-    time_emb_size: 16
-    num_layers: 2
-    num_heads: 2
-    mc_num_sample_per_step: 20
-    loss_integral_num_sample_per_step: 20
+    hidden_size: 16
+    num_layers: 1
+    num_heads: 1
     use_ln: False
+    dropout_rate: 0.2
     model_specs:
-      prior: false
-      filter_mcs_events_for_loss: true
-      includes_mcs: false
+      model_is_retx: False # retx model or mcs model
+      history:
+        length: 95
+        include_mcs: True
+        include_num_rbs: False
+        include_mretx: False
+        include_rfailed: False
+      embeddings:
+        concat: False
+        mcs_emb_dim: 4 #8
+        num_rbs_emb_dim: 4
+        mretx_emb_dim: 1
+        rfailed_emb_dim: 1
+      pooling:
+        type: 'sum' # mean, max, min, sum, last
 
-
-IF_train_s63_packetarrival_0:
+RETX_s63_0:
   base_config:
     stage: train
     backend: torch
-    dataset_id: s63_packetarrival_0
+    dataset_id: s63_retx_0
     runner_id: std_tpp
-    model_id: IntensityFreePacketArrival
-    base_dir: './data/s63_results/packet_arrival/trained_models/test0/'
+    model_id: SingleStepRETX
+    base_dir: './data/s63_results/link_quality/trained_models/retx0/'
   trainer_config:
-    batch_size: 64
-    max_epoch: 800
+    batch_size: 256
+    max_epoch: 500
     shuffle: False
     optimizer: adam
-    learning_rate: 1.e-4
-    valid_freq: 10
+    learning_rate: 1.e-3
+    valid_freq: 5
     use_tfb: False
     metrics: [ 'acc', 'rmse' ]
     seed: 2019
     gpu: 0
   model_config:
-    hidden_size: 64
-    time_emb_size: 16
+    hidden_size: 16
     num_layers: 1
-    num_heads: 2
-    mc_num_sample_per_step: 20
-    loss_integral_num_sample_per_step: 20
+    num_heads: 1
     use_ln: False
     dropout_rate: 0.2
     model_specs:
-      num_mix_components: 16
-      prior: false
+      model_is_retx: True # retx model or mcs model
+      history:
+        length: 95
+        include_mcs: True
+        include_num_rbs: True
+        include_rfailed: True
+      conditions:
+        concat: sum_conds # 'concat_all', 'sum_conds', 'sum_all'
+        cond_dim: 8
+        num_rbs_emb_dim: 4
+        mcs_emb_dim: 4
+        include_mcs: True
+        include_num_rbs: True
+      embeddings:
+        concat: False
+        mcs_emb_dim: 4 #8
+        num_rbs_emb_dim: 4
+        mretx_emb_dim: 1
+        rfailed_emb_dim: 1
+      pooling:
+        type: 'max' # mean, max, min, sum, last

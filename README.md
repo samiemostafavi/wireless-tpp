@@ -183,6 +183,18 @@ python main.py -t link_quality -u generate_predictions -s data/s63_results -p sa
 python main.py -t link_quality -u plot_predictions -s data/s63_results -n mcs0 -i 1122926_140662824829568_241203-102211
 ```
 
+Validate retx model (probabilistic)
+```
+python main.py -t link_quality -u generate_predictions -s data/s63_results -p probabilistic -c config/prediction_config.json -g s63_retx -n retx0 -i 1457673_140246213436032_250101-060222
+python main.py -t link_quality -u plot_predictions -s data/s63_results -n retx0 -i 1468033_140013680992896_250101-124139
+```
+
+Validate retx model (sampling)
+```
+python main.py -t link_quality -u generate_predictions -s data/s63_results -p sampling -c config/prediction_config.json -g s63_retx -n retx0 -i 1106489_139985643180672_241202-123840
+python main.py -t link_quality -u plot_predictions -s data/s63_results -n retx0 -i 1122926_140662824829568_241203-102211
+```
+
 
 
 ### Step 4. Validate packet delay prediction
