@@ -179,7 +179,7 @@ class SingleStepScheduling(TorchBaseModel):
             self.dtime_linear = nn.Linear(self.d_model, 3 * self.num_mix_components_dtime)
             self.len_linear = nn.Linear(self.d_model, 3 * self.num_mix_components_len)
 
-    def forward(self, slot_seqs, len_seqs_transformed, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, time_seqs, type_seqs, attention_mask):
+    def forward(self, slot_seqs, len_seqs_transformed, mcs_seqs, mretx_seqs, rfailed_seqs, time_seqs, type_seqs, attention_mask):
         """Call the model
 
         Args:
@@ -194,8 +194,8 @@ class SingleStepScheduling(TorchBaseModel):
         type_seqs = type_seqs.long()
         slot_seqs = slot_seqs.long()
         mcs_seqs = mcs_seqs.long()
-        mac_retx_seqs = mac_retx_seqs.long()
-        rlc_failed_seqs = rlc_failed_seqs.long()
+        mretx_seqs = mretx_seqs.long()
+        rfailed_seqs = rfailed_seqs.long()
 
         len_seqs = self.len_hist_transform.inv(len_seqs_transformed) # apply inverse transform to len
         len_seqs = len_seqs.float().unsqueeze(-1)
@@ -228,13 +228,13 @@ class SingleStepScheduling(TorchBaseModel):
             mcs_enc = 0
 
         if self.include_mretx:
-            mretx_enc = self.layer_mretx_emb(mac_retx_seqs)
+            mretx_enc = self.layer_mretx_emb(mretx_seqs)
             emb_list.append(mretx_enc)
         else:
             mretx_enc = 0
 
         if self.include_rfailed:
-            rfailed_enc = self.layer_rfailed_emb(rlc_failed_seqs)
+            rfailed_enc = self.layer_rfailed_emb(rfailed_seqs)
             emb_list.append(rfailed_enc)
         else:
             rfailed_enc = 0
@@ -372,14 +372,14 @@ class SingleStepScheduling(TorchBaseModel):
         Returns:
             tuple: loglikelihood loss and num of events.
         """
-        slot_seqs, len_seqs_transformed, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs, time_seqs, dtime_seqs_transformed, type_seqs, batch_non_pad_mask, attention_mask = batch
+        slot_seqs, len_seqs_transformed, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs, time_seqs, dtime_seqs_transformed, type_seqs, batch_non_pad_mask, attention_mask = batch
 
         # only consider the last self.his_len events in the history
         slot_seqs = slot_seqs[:, -1 -self.his_len:]
         len_seqs_transformed = len_seqs_transformed[:, -1 -self.his_len:]
         mcs_seqs = mcs_seqs[:, -1 -self.his_len:]
-        mac_retx_seqs = mac_retx_seqs[:, -1 -self.his_len:]
-        rlc_failed_seqs = rlc_failed_seqs[:, -1 -self.his_len:]
+        mretx_seqs = mretx_seqs[:, -1 -self.his_len:]
+        rfailed_seqs = rfailed_seqs[:, -1 -self.his_len:]
         time_seqs = time_seqs[:, -1 -self.his_len:]
         type_seqs = type_seqs[:, -1 -self.his_len:]
         attention_mask = attention_mask[:, -1 -self.his_len:, -1 -self.his_len:]
@@ -392,8 +392,8 @@ class SingleStepScheduling(TorchBaseModel):
             slot_seqs[:, :-1],
             len_seqs_transformed[:, :-1], 
             mcs_seqs[:, :-1], 
-            mac_retx_seqs[:, :-1], 
-            rlc_failed_seqs[:, :-1], 
+            mretx_seqs[:, :-1], 
+            rfailed_seqs[:, :-1], 
             time_seqs[:, :-1], 
             type_seqs[:, :-1], 
             attention_mask[:, :-1, :-1]
@@ -469,14 +469,14 @@ class SingleStepScheduling(TorchBaseModel):
         Returns:
             tuple: tensors of dtime and type prediction, [batch_size, seq_len].
         """
-        slot_seqs, len_seqs_transformed, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs, time_seqs, dtime_seqs_transformed, type_seqs, batch_non_pad_mask, attention_mask = batch
+        slot_seqs, len_seqs_transformed, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs, time_seqs, dtime_seqs_transformed, type_seqs, batch_non_pad_mask, attention_mask = batch
 
         # only consider the last self.his_len events in the history
         slot_seqs = slot_seqs[:, -1 -self.his_len:]
         len_seqs_transformed = len_seqs_transformed[:, -1 -self.his_len:]
         mcs_seqs = mcs_seqs[:, -1 -self.his_len:]
-        mac_retx_seqs = mac_retx_seqs[:, -1 -self.his_len:]
-        rlc_failed_seqs = rlc_failed_seqs[:, -1 -self.his_len:]
+        mretx_seqs = mretx_seqs[:, -1 -self.his_len:]
+        rfailed_seqs = rfailed_seqs[:, -1 -self.his_len:]
         time_seqs = time_seqs[:, -1 -self.his_len:]
         type_seqs = type_seqs[:, -1 -self.his_len:]
         dtime_seqs_transformed = dtime_seqs_transformed[:, -1 -self.his_len:]
@@ -489,8 +489,8 @@ class SingleStepScheduling(TorchBaseModel):
             slot_seqs[:, :-1],
             len_seqs_transformed[:, :-1], 
             mcs_seqs[:, :-1], 
-            mac_retx_seqs[:, :-1], 
-            rlc_failed_seqs[:, :-1], 
+            mretx_seqs[:, :-1], 
+            rfailed_seqs[:, :-1], 
             time_seqs[:, :-1], 
             type_seqs[:, :-1], 
             attention_mask[:, :-1, :-1]

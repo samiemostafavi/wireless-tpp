@@ -128,10 +128,10 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     #num_event_types_segment_only = (num_event_types-1)/2
 
     # we have 8 label attributes:
-    # label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs
+    # label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs
     # data['label'] dimensions: [num batches, 8 attributes , batch size, seq length]
 
-    h_dtime, h_time, h_event_type, h_slot, h_len, h_mcs, h_mac_retx, h_rlc_failed, h_num_rbs = [],[],[],[],[],[],[],[],[]
+    h_dtime, h_time, h_event_type, h_slot, h_len, h_mcs, h_mretx, h_rfailed, h_num_rbs = [],[],[],[],[],[],[],[],[]
     history_mcs_data = []
     for batch in data['label']:
         h_dtime.append(batch[0])
@@ -140,8 +140,8 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
         h_slot.append(batch[3])
         h_len.append(batch[4])
         h_mcs.append(batch[5])
-        h_mac_retx.append(batch[6])
-        h_rlc_failed.append(batch[7])
+        h_mretx.append(batch[6])
+        h_rfailed.append(batch[7])
         h_num_rbs.append(batch[8])
 
     ch_dtime = np.concatenate(h_dtime, axis=0)
@@ -150,8 +150,8 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     ch_slot = np.concatenate(h_slot, axis=0)
     ch_len = np.concatenate(h_len, axis=0)
     ch_mcs = np.concatenate(h_mcs, axis=0)
-    ch_mac_retx = np.concatenate(h_mac_retx, axis=0)
-    ch_rlc_failed = np.concatenate(h_rlc_failed, axis=0)
+    ch_mretx = np.concatenate(h_mretx, axis=0)
+    ch_rfailed = np.concatenate(h_rfailed, axis=0)
     ch_num_rbs = np.concatenate(h_num_rbs, axis=0)
 
     # data['pred'] dimensions: [num batches, 1 , batch size, num probability samples]
@@ -182,8 +182,8 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     ch_event_type = ch_event_type[ar_index,:]
     ch_len = ch_len[ar_index,:]
     ch_mcs = ch_mcs[ar_index,:]
-    ch_mac_retx = ch_mac_retx[ar_index,:]
-    ch_rlc_failed = ch_rlc_failed[ar_index,:]
+    ch_mretx = ch_mretx[ar_index,:]
+    ch_rfailed = ch_rfailed[ar_index,:]
     ch_num_rbs = ch_num_rbs[ar_index,:]
 
     logger.info(f"Event types in the history plus the label: {ch_event_type}")
@@ -196,16 +196,16 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
 
     # history packets time series
     packet_len_list = np.array([ch_len[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
-    packet_mrtx_list = np.array([ch_mac_retx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
-    packet_rrtx_list = np.array([ch_rlc_failed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    packet_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    packet_rrtx_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
     packet_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
     packet_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
 
     # history segments time series
     segment_len_list = np.array([ch_len[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_type_list = np.array([ch_event_type[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
-    segment_mrtx_list = np.array([ch_mac_retx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
-    segment_rrtx_list = np.array([ch_rlc_failed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
+    segment_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
+    segment_rrtx_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_dt_list = np.array([ch_dtime[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
@@ -271,10 +271,10 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
     #num_event_types_segment_only = (num_event_types-1)/2
 
     # we have 8 label attributes:
-    # label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs
+    # label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs
     # data['label'] dimensions: [num batches, 8 attributes , batch size, seq length]
 
-    h_dtime, h_time, h_event_type, h_slot, h_len, h_mcs, h_mac_retx, h_rlc_failed, h_num_rbs = [],[],[],[],[],[],[],[],[]
+    h_dtime, h_time, h_event_type, h_slot, h_len, h_mcs, h_mretx, h_rfailed, h_num_rbs = [],[],[],[],[],[],[],[],[]
     history_mcs_data = []
     for batch in data['label']:
         h_dtime.append(batch[0])
@@ -283,8 +283,8 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
         h_slot.append(batch[3])
         h_len.append(batch[4])
         h_mcs.append(batch[5])
-        h_mac_retx.append(batch[6])
-        h_rlc_failed.append(batch[7])
+        h_mretx.append(batch[6])
+        h_rfailed.append(batch[7])
         h_num_rbs.append(batch[8])
 
     ch_dtime = np.concatenate(h_dtime, axis=0)
@@ -293,8 +293,8 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
     ch_slot = np.concatenate(h_slot, axis=0)
     ch_len = np.concatenate(h_len, axis=0)
     ch_mcs = np.concatenate(h_mcs, axis=0)
-    ch_mac_retx = np.concatenate(h_mac_retx, axis=0)
-    ch_rlc_failed = np.concatenate(h_rlc_failed, axis=0)
+    ch_mretx = np.concatenate(h_mretx, axis=0)
+    ch_rfailed = np.concatenate(h_rfailed, axis=0)
     ch_num_rbs = np.concatenate(h_num_rbs, axis=0)
 
 
@@ -328,8 +328,8 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
     ch_event_type = ch_event_type[ar_index,:]
     ch_len = ch_len[ar_index,:]
     ch_mcs = ch_mcs[ar_index,:]
-    ch_mac_retx = ch_mac_retx[ar_index,:]
-    ch_rlc_failed = ch_rlc_failed[ar_index,:]
+    ch_mretx = ch_mretx[ar_index,:]
+    ch_rfailed = ch_rfailed[ar_index,:]
     ch_num_rbs = ch_num_rbs[ar_index,:]
 
     logger.info(f"Event types in the history plus the label: {ch_event_type}")
@@ -342,16 +342,16 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
 
     # history packets time series
     packet_len_list = np.array([ch_len[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
-    packet_mrtx_list = np.array([ch_mac_retx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
-    packet_rrtx_list = np.array([ch_rlc_failed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    packet_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    packet_rrtx_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
     packet_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
     packet_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
 
     # history segments time series
     segment_len_list = np.array([ch_len[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_type_list = np.array([ch_event_type[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
-    segment_mrtx_list = np.array([ch_mac_retx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
-    segment_rrtx_list = np.array([ch_rlc_failed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
+    segment_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
+    segment_rrtx_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_dt_list = np.array([ch_dtime[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])

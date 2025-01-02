@@ -66,12 +66,12 @@ class TPPRunnerScheduling():
         # just for the sake of reporting in logs
         self._data_loader.train_loader().dataset.get_stats(inp_type='len_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
         self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='mac_retx_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='rlc_failed_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+        self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+        self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
         self._data_loader.train_loader().dataset.get_stats(inp_type='len_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
         self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='mac_retx_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='rlc_failed_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+        self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+        self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
 
         self.timer = Timer()
 

@@ -11,6 +11,11 @@ from edaf.core.uplink.analyze_channel import ULChannelAnalyzer
 from edaf.core.uplink.analyze_packet import ULPacketAnalyzer
 from edaf.core.uplink.analyze_scheduling import ULSchedulingAnalyzer
 
+NUM_RBS_PADDING = 106
+NUM_SYMBOLS_PADDING = 14
+MRETX_PADDING = 4
+RFAILED_PADDING = 2
+
 if not os.getenv('DEBUG'):
     logger.remove()
     logger.add(sys.stdout, level="INFO")
@@ -200,8 +205,8 @@ def plot_data(args):
                         'timestamp' : sched_analyzer.find_frame_start_ts_from_ts(packet['ip.in_t']),
                         'len' : 0,
                         'mcs_index' : 0,
-                        'mac_retx' : 0,
-                        'rlc_failed' : 0,
+                        'mretx' : 0,
+                        'rfailed' : 0,
                         'num_rbs' : 0,
                         'num_symbols' : 0,
                     }
@@ -213,8 +218,8 @@ def plot_data(args):
                         'timestamp' : packet['ip.in_t'],
                         'len' : packet['len'],
                         'mcs_index' : packet['rlc.attempts'][0]['mac.attempts'][0]['mcs'],
-                        'mac_retx' : sum([len(rlc_attempt['mac.attempts'])-1 for rlc_attempt in packet['rlc.attempts'] if not rlc_attempt['repeated']]),
-                        'rlc_failed' : sum([1 for rlc_attempt in packet['rlc.attempts'] if not rlc_attempt['acked']]),
+                        'mretx' : sum([len(rlc_attempt['mac.attempts'])-1 for rlc_attempt in packet['rlc.attempts'] if not rlc_attempt['repeated']]),
+                        'rfailed' : sum([1 for rlc_attempt in packet['rlc.attempts'] if not rlc_attempt['acked']]),
                     }
                 )
                 for rlc_attempt in packet['rlc.attempts']:
@@ -225,8 +230,8 @@ def plot_data(args):
                             'timestamp' : rlc_attempt['mac.in_t'],
                             'len' : rlc_attempt['len'],
                             'mcs_index' : rlc_attempt['mac.attempts'][0]['mcs'],
-                            'mac_retx' : len(rlc_attempt['mac.attempts'])-1,
-                            'rlc_failed' : int(not rlc_attempt['acked']),
+                            'mretx' : len(rlc_attempt['mac.attempts'])-1,
+                            'rfailed' : int(not rlc_attempt['acked']),
                         }
                     )
             print("\n", end="")
@@ -236,15 +241,15 @@ def plot_data(args):
 
             # packets time series
             packet_len_list = np.concatenate((packet_len_list,np.array([event['len'] for event in this_db_events if event['packet_or_segment'] and event['packet_id'] >= 0])))
-            packet_mrtx_list = np.concatenate((packet_mrtx_list,np.array([event['mac_retx'] for event in this_db_events if event['packet_or_segment'] and event['packet_id'] >= 0])))
-            packet_rrtx_list = np.concatenate((packet_rrtx_list,np.array([event['rlc_failed'] for event in this_db_events if event['packet_or_segment'] and event['packet_id'] >= 0])))
+            packet_mrtx_list = np.concatenate((packet_mrtx_list,np.array([event['mretx'] for event in this_db_events if event['packet_or_segment'] and event['packet_id'] >= 0])))
+            packet_rrtx_list = np.concatenate((packet_rrtx_list,np.array([event['rfailed'] for event in this_db_events if event['packet_or_segment'] and event['packet_id'] >= 0])))
             packet_mcs_list = np.concatenate((packet_mcs_list,np.array([event['mcs_index'] for event in this_db_events if event['packet_or_segment'] and event['packet_id'] >= 0])))
             packet_ts_list = np.concatenate((packet_ts_list,np.array([(event['timestamp']-begin_ts+prev_end_ts)*1000 for event in this_db_events if event['packet_or_segment'] and event['packet_id'] >= 0])))
 
             # segments time series
             segment_len_list = np.concatenate((segment_len_list,np.array([event['len'] for event in this_db_events if not event['packet_or_segment']])))
-            segment_mrtx_list = np.concatenate((segment_mrtx_list,np.array([event['mac_retx'] for event in this_db_events if not event['packet_or_segment']])))
-            segment_rrtx_list = np.concatenate((segment_rrtx_list,np.array([event['rlc_failed'] for event in this_db_events if not event['packet_or_segment']])))
+            segment_mrtx_list = np.concatenate((segment_mrtx_list,np.array([event['mretx'] for event in this_db_events if not event['packet_or_segment']])))
+            segment_rrtx_list = np.concatenate((segment_rrtx_list,np.array([event['rfailed'] for event in this_db_events if not event['packet_or_segment']])))
             segment_mcs_list = np.concatenate((segment_mcs_list,np.array([event['mcs_index'] for event in this_db_events if not event['packet_or_segment']])))
             segment_ts_list = np.concatenate((segment_ts_list,np.array([(event['timestamp']-begin_ts+prev_end_ts)*1000 for event in this_db_events if not event['packet_or_segment']])))
                                              
@@ -581,7 +586,6 @@ def create_training_dataset(args):
         exp_config = json.load(f)
 
     time_masks = dataset_config['time_masks']
-    filter_packet_sizes = dataset_config['filter_packet_sizes']
 
     # select the source configuration
     window_config = dataset_config['window_config']
@@ -599,15 +603,33 @@ def create_training_dataset(args):
     results_folder_addr = folder_addr / 'scheduling' / 'datasets' / args.name
     results_folder_addr.mkdir(parents=True, exist_ok=True)
 
-    time_bounds = []
+    slots_duration_ms = exp_config['slots_duration_ms']
+    num_slots_per_frame = exp_config['slots_per_frame']
+    total_prbs_num = exp_config['total_prbs_num']
+    symbols_per_slot = exp_config['symbols_per_slot']
+    scheduling_map_num_integers = exp_config['scheduling_map_num_integers']
+    max_num_frames = exp_config['max_num_frames']
+    scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
+    max_harq_attempts = exp_config['max_harq_attempts']
+
+    dataset = []
     stream_rntis = []
+    dim_process = 0
     db_id = 0
     for result_database_file, time_mask in zip(result_database_files, time_masks):
         packet_analyzer = ULPacketAnalyzer(result_database_file)
+        sched_analyzer = ULSchedulingAnalyzer(
+            total_prbs_num = total_prbs_num, 
+            symbols_per_slot = symbols_per_slot,
+            slots_per_frame = num_slots_per_frame, 
+            slots_duration_ms = slots_duration_ms, 
+            scheduling_map_num_integers = scheduling_map_num_integers,
+            max_num_frames = max_num_frames,
+            db_addr = result_database_file
+        )
         experiment_length_ts = packet_analyzer.last_ueip_ts - packet_analyzer.first_ueip_ts
         begin_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
         end_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
-        time_bounds.append((begin_ts, end_ts))
         logger.info(f"Database {db_id}, experiment duration: {(experiment_length_ts)} seconds")
         logger.info(f"Database {db_id}, filtering packets from {begin_ts} to {end_ts}, length: {end_ts-begin_ts} seconds")
 
@@ -620,22 +642,39 @@ def create_training_dataset(args):
         stream_rnti = list(packets_rnti_set)[0]
         stream_rntis.append(stream_rnti)
 
-        db_id += 1
+        this_db_scheduling_events = extract_scheduling_events(packet_analyzer, sched_analyzer, begin_ts, end_ts, exp_config)
 
-    this_db_events_v2_arr = extract_scheduling_events(result_database_files, time_bounds, stream_rntis, exp_config, dtime_max)
+        # find the dim_process
+        this_db_max_segment = max(event['segment'] for event in this_db_scheduling_events)
+        dim_process = max(dim_process, this_db_max_segment+1)
 
-    # create prefinal list of events
-    dataset = []
-    for this_db_events_v2 in this_db_events_v2_arr:
-        logger.info(f"Creating training dataset for this db final")
-        this_db_dataset, dim_process = create_training_dataset_event_window(this_db_events_v2, window_size_events, max_num_segments, dataset_config)
+        logger.info(f"Creating training dataset for db {db_id}")
+        dataset_size_max = dataset_config['dataset_size_max']
+        history_window_size = dataset_config['window_config']['size']
+        dataset_this_db = []
+        for m in range(len(this_db_scheduling_events) - 2, -1, -1):
+            if m <= history_window_size-1:
+                break
+            m1 = m + 1
+            # never end a sequence with a packet arrival event
+            if this_db_scheduling_events[m1]['segment'] == -1:
+                continue
+
+            hist_sequence = window_history_scheduling_events(m1, this_db_scheduling_events, history_window_size)
+            if len(hist_sequence) > 0:
+                dataset_this_db.append(hist_sequence)
+                
+            if len(dataset_this_db) > dataset_size_max:
+                break
 
         # print length of dataset
-        logger.info(f"Number of total entries produced by this db dataset: {len(this_db_dataset)}")
-        print(this_db_dataset[0])
+        logger.info(f"Number of total entries produced by db {db_id} dataset: {len(dataset_this_db)}")
+        print(dataset_this_db[0])
 
         # append elements of one_db_dataset to dataset
-        dataset.extend(this_db_dataset)
+        dataset.extend(dataset_this_db)
+
+        db_id += 1
 
     # shuffle the dataset
     random.shuffle(dataset)
@@ -646,7 +685,6 @@ def create_training_dataset(args):
     dataset_config = {
         "stream_rntis" : stream_rntis,
         "dim_process" : int(dim_process),
-        "max_num_segments" : int(max_num_segments),
         **dataset_config,
     }
     with open(results_folder_addr / 'config.json', 'w') as f:
@@ -686,7 +724,7 @@ def create_training_dataset(args):
         pickle.dump(test_ds, f)
 
 
-def extract_scheduling_events(result_database_files, time_bounds, stream_rntis, exp_config, dtime_max):
+def extract_scheduling_events(packet_analyzer, sched_analyzer, begin_ts, end_ts, exp_config):
 
     slots_duration_ms = exp_config['slots_duration_ms']
     num_slots_per_frame = exp_config['slots_per_frame']
@@ -697,175 +735,103 @@ def extract_scheduling_events(result_database_files, time_bounds, stream_rntis, 
     scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
     max_harq_attempts = exp_config['max_harq_attempts']
 
-    this_db_events_v2_arr = []
-    for result_database_file, time_bound, stream_rnti in zip(result_database_files, time_bounds, stream_rntis):
-        # initiate the analyzers
-        packet_analyzer = ULPacketAnalyzer(result_database_file)
-        sched_analyzer = ULSchedulingAnalyzer(
-            total_prbs_num = total_prbs_num, 
-            symbols_per_slot = symbols_per_slot,
-            slots_per_frame = num_slots_per_frame, 
-            slots_duration_ms = slots_duration_ms, 
-            scheduling_map_num_integers = scheduling_map_num_integers,
-            max_num_frames = max_num_frames,
-            db_addr = result_database_file
+    # analyze packets
+    packets = packet_analyzer.figure_packettx_from_ts(begin_ts, end_ts)
+
+    last_event_ts = 0
+    this_db_events_v1 = []
+    logger.info(f"Extract scheduling events")
+    prev_mcs_index = 0
+    for idx, packet in enumerate(packets):
+        print(f"\rProcessing packet {idx + 1}/{len(packets)} ({(idx + 1) / len(packets) * 100:.2f}%) with packet sn: {packet['sn']}", end="")
+        if packet['rlc.attempts'][0]['mac.attempts'][0]['mcs'] == 0:
+            mcs_index = prev_mcs_index
+        else:
+            mcs_index = packet['rlc.attempts'][0]['mac.attempts'][0]['mcs']
+            prev_mcs_index = packet['rlc.attempts'][0]['mac.attempts'][0]['mcs']
+
+        frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
+            timestamp=packet['ip.in_t'],
+            SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
         )
-        begin_ts, end_ts = time_bound
+        time_since_frame0 = frame_num*num_slots_per_frame*slots_duration_ms + slot_num*slots_duration_ms
+        time_since_last_event = time_since_frame0-last_event_ts
+        if time_since_last_event < 0:
+            time_since_last_event = time_since_frame0
+        last_event_ts = time_since_frame0
 
-        # analyze packets
-        packets = packet_analyzer.figure_packettx_from_ts(begin_ts, end_ts)
+        # add the packet arrival event
+        this_db_events_v1.append(
+            {
+                'segment' : -1, # packet arrival is not a segment
+                'packet_id' : idx,
+                'depart_timestamp' : packet['ip.out_t'],
+                'timestamp' : packet['ip.in_t'],
+                'slot' : slot_num,
+                'len' : packet['len'],
+                'mcs_index' : mcs_index,
+                'mretx' : MRETX_PADDING,
+                'rfailed' : RFAILED_PADDING,
+                'num_rbs' : NUM_RBS_PADDING,
+                'num_symbols' : NUM_SYMBOLS_PADDING,
+                'time_since_start' : time_since_frame0,
+                'time_since_last_event' : time_since_last_event,
+            }
+        )
+        for idx2, rlc_attempt in enumerate(packet['rlc.attempts']):
 
-        this_db_events_v1 = []
-        logger.info(f"Extract events for dataset v1")
-        prev_mcs_index = 0
-        for idx, packet in enumerate(packets):
-            print(f"\rProcessing packet {idx + 1}/{len(packets)} ({(idx + 1) / len(packets) * 100:.2f}%) with packet sn: {packet['sn']}", end="")
-            if packet['rlc.attempts'][0]['mac.attempts'][0]['mcs'] == 0:
-                mcs_index = prev_mcs_index
-            else:
-                mcs_index = packet['rlc.attempts'][0]['mac.attempts'][0]['mcs']
-                prev_mcs_index = packet['rlc.attempts'][0]['mac.attempts'][0]['mcs']
-
-            frame_start_ts = sched_analyzer.find_frame_start_ts_from_ts(packet['ip.in_t'])
-            packet_arrival_slot_num = int((packet['ip.in_t']-frame_start_ts)*1000/slots_duration_ms)
-
-            # add the packet arrival event
-            this_db_events_v1.append(
-                {
-                    'segment' : -1, # packet arrival is not a segment
-                    'packet_id' : idx,
-                    'depart_timestamp' : packet['ip.out_t'],
-                    'timestamp' : packet['ip.in_t'],
-                    'slot' : packet_arrival_slot_num,
-                    'len' : packet['len'],
-                    'mcs_index' : mcs_index,
-                    'mac_retx' : sum([len(rlc_attempt['mac.attempts'])-1 for rlc_attempt in packet['rlc.attempts'] if not rlc_attempt['repeated']]),
-                    'rlc_failed' : sum([1 for rlc_attempt in packet['rlc.attempts'] if not rlc_attempt['acked']]),
-                    'num_rbs' : 0,
-                    'num_symbols' : 0,
-                }
-            )
-            for idx2, rlc_attempt in enumerate(packet['rlc.attempts']):
-                
-                segment_slot_num = int((rlc_attempt['mac.in_t']-frame_start_ts)*1000/slots_duration_ms) % num_slots_per_frame
-
-                if rlc_attempt['mac.attempts'][0]['mcs'] == 0:
-                    mcs_index = prev_mcs_index
-                else:
-                    mcs_index = rlc_attempt['mac.attempts'][0]['mcs']
-                    prev_mcs_index = rlc_attempt['mac.attempts'][0]['mcs']
-                this_db_events_v1.append(
-                    {
-                        'segment' : idx2,
-                        'packet_id' : idx,
-                        'timestamp' : rlc_attempt['mac.in_t'],
-                        'depart_timestamp' : -1,
-                        'slot' : segment_slot_num,
-                        'len' : rlc_attempt['len'],
-                        'mcs_index' : mcs_index,
-                        'mac_retx' : len(rlc_attempt['mac.attempts'])-1,
-                        'rlc_failed' : int(not rlc_attempt['acked']),
-                        'num_rbs' : rlc_attempt['mac.attempts'][0]['rbs'],
-                        'num_symbols' : rlc_attempt['mac.attempts'][0]['symbols'],
-                    }
-                )
-        print("\n", end="")
-
-        # sort the events based on timestamp
-        this_db_events_v1 = sorted(this_db_events_v1, key=lambda x: x['timestamp'], reverse=False)
-
-        # add timestamps relative to the frame0
-        this_db_events_v2 = []
-        last_event_ts = 0
-        logger.info(f"Extract events for dataset v2")
-        for idx, item in enumerate(this_db_events_v1):
-            print(f"\rProcessing packet {idx + 1}/{len(this_db_events_v1)} ({(idx + 1) / len(this_db_events_v1) * 100:.2f}%) with packet id: {item['packet_id']}", end="")
             frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
-                timestamp=item['timestamp'],
+                timestamp=rlc_attempt['mac.in_t'],
                 SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
             )
             time_since_frame0 = frame_num*num_slots_per_frame*slots_duration_ms + slot_num*slots_duration_ms
-
             time_since_last_event = time_since_frame0-last_event_ts
             if time_since_last_event < 0:
                 time_since_last_event = time_since_frame0
-
             last_event_ts = time_since_frame0
 
-            if time_since_last_event > dtime_max:
-                logger.warning(f"Event has a time_since_last_event of {time_since_last_event} ms")
-            #if time_since_last_event > dtime_max:
-            #    logger.warning(f"Event has a time_since_last_event of {time_since_last_event} ms, skipping...")
-            #    continue
-
-            this_db_events_v2.append(
+            if rlc_attempt['mac.attempts'][0]['mcs'] == 0:
+                mcs_index = prev_mcs_index
+            else:
+                mcs_index = rlc_attempt['mac.attempts'][0]['mcs']
+                prev_mcs_index = rlc_attempt['mac.attempts'][0]['mcs']
+            this_db_events_v1.append(
                 {
-                    **item,
+                    'segment' : idx2,
+                    'packet_id' : idx,
+                    'timestamp' : rlc_attempt['mac.in_t'],
+                    'depart_timestamp' : -1,
+                    'slot' : slot_num,
+                    'len' : rlc_attempt['len'],
+                    'mcs_index' : mcs_index,
+                    'mretx' : len(rlc_attempt['mac.attempts'])-1,
+                    'rfailed' : int(not rlc_attempt['acked']),
+                    'num_rbs' : rlc_attempt['mac.attempts'][0]['rbs'],
+                    'num_symbols' : rlc_attempt['mac.attempts'][0]['symbols'],
                     'time_since_start' : time_since_frame0,
                     'time_since_last_event' : time_since_last_event,
                 }
             )
-        print("\n", end="")
-        this_db_events_v2 = this_db_events_v2[1:]
-        this_db_events_v2_arr.append(this_db_events_v2)    
-    return this_db_events_v2_arr
 
-def create_training_dataset_event_window(this_db_events_v2, window_size_events, max_num_segments, config):
-    
-    # select the source configuration
-    dataset_size_max = config['dataset_size_max']
+            
+    print("\n", end="")
 
-    reached_the_end = False
-    dataset = []
-    idx = 0
-    # iterate backwards over the this_db_events_v2 
-    for idx in range(len(this_db_events_v2)-1, -1, -1):
-        # never start (actually end) with packet arrival
-        if this_db_events_v2[idx]['segment'] == -1:
-            continue
-        events_window_v3 = []
-        packet_ids_set = set()
-        idy = idx
-        while True:
-            if idy == 0:
-                reached_the_end = True
-                break
-            if len(events_window_v3) >= window_size_events:
-                break
-            if this_db_events_v2[idy]['time_since_last_event'] > config['dtime_max']:
-                logger.warning(f"Event has a time_since_last_event of {this_db_events_v2[idy]['time_since_last_event']} ms")
-            events_window_v3.append(this_db_events_v2[idy])
-            idy = idy-1
-        if reached_the_end:
-            break
+    # sort the events based on timestamp
+    this_db_events_v1 = sorted(this_db_events_v1, key=lambda x: x['timestamp'], reverse=False)
 
-        # sort the events_window_v3 based on timestamp
-        events_window_v3 = sorted(events_window_v3, key=lambda x: x['timestamp'], reverse=False)
+    return this_db_events_v1[1:] # remove the first event
 
-        events_window_v4 = []
-        for pos, event in enumerate(events_window_v3):
-            # add the event to the dataset
-            # remove 'packet_or_segment' 'packet_id' and 'timestamp' fields
-            events_window_v4.append(
-                {
-                    'idx_event' : pos,
-                    'type_event': event['segment']+1,
-                    'slot' : event['slot'],
-                    'len' : event['len'],
-                    'mcs_index' : event['mcs_index'],
-                    'mac_retx' : event['mac_retx'],
-                    'rlc_failed' : event['rlc_failed'],
-                    'num_rbs' : event['num_rbs'],
-                    'num_symbols' : event['num_symbols'],
-                    'time_since_start' : event['time_since_start'],
-                    'time_since_last_event' : event['time_since_last_event']
-                }
-            )
-        
-
-        dataset.append(events_window_v4)
-        if len(dataset) > dataset_size_max:
-            break
-    
-    dim_process = max_num_segments+1
-    return dataset, dim_process
+def window_history_scheduling_events(sched_event_m1_id, scheduling_events, window_size_events):
+    m1 = sched_event_m1_id
+    events_window = []
+    if m1 - window_size_events < 0 or m1 + 1 > len(scheduling_events):
+        return []
+    for pos, event in enumerate(scheduling_events[m1-window_size_events:m1+1]):
+        events_window.append(
+            {
+                'idx_event' : pos,
+                'type_event': event['segment']+1,
+                **event,
+            }
+        )
+    return events_window   

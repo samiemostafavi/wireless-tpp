@@ -10,8 +10,9 @@ from wireless_tpp.utils import logger
 
 from edaf.core.uplink.analyze_packet import ULPacketAnalyzer
 from edaf.core.uplink.analyze_scheduling import ULSchedulingAnalyzer
+from edaf.core.uplink.analyze_channel import ULChannelAnalyzer
 
-from src.link_quality import extract_link_quality_events_stream_based
+from src.link_quality import extract_link_quality_events
 from src.packet_arrival import extract_packet_arrival_events
 from src.scheduling import extract_scheduling_events
 
@@ -347,8 +348,8 @@ def create_scheduling_window(sorted_scheduling_events, arrival_event, history_wi
                 'slot' : event['slot'],
                 'len' : event['len'],
                 'mcs_index' : event['mcs_index'],
-                'mac_retx' : event['mac_retx'],
-                'rlc_failed' : event['rlc_failed'],
+                'mretx' : event['mretx'],
+                'rfailed' : event['rfailed'],
                 'num_rbs' : event['num_rbs'],
                 'num_symbols' : event['num_symbols'],
                 'time_since_start' : event['time_since_start'],
@@ -375,8 +376,8 @@ def create_scheduling_window(sorted_scheduling_events, arrival_event, history_wi
                 'slot' : event['slot'],
                 'len' : event['len'],
                 'mcs_index' : event['mcs_index'],
-                'mac_retx' : event['mac_retx'],
-                'rlc_failed' : event['rlc_failed'],
+                'mretx' : event['mretx'],
+                'rfailed' : event['rfailed'],
                 'num_rbs' : event['num_rbs'],
                 'num_symbols' : event['num_symbols'],
                 'time_since_start' : event['time_since_start'],
@@ -455,8 +456,8 @@ def scheduling_prediction(scheduling_runner, scheduling_analyzer, scheduling_sou
             'slot' : pred_segment_slot,
             'len' : pred_segment_len_bytes,
             'mcs_index' : packet_mcs_index,
-            'mac_retx' : -1,
-            'rlc_failed' : -1,
+            'mretx' : -1,
+            'rfailed' : -1,
             'num_rbs' : pred_segment_num_rbs,
             'num_symbols' : num_symbols,
             'time_since_start' : pred_segment_time_since_start,
@@ -511,14 +512,14 @@ def link_quality_prediction(link_quality_runner, link_source_data,
 
     # we have 4 rounds of retransmission: {0,1,2,3}
     # we have successful or unsuccessful RLC segment {0,1}
-    # we use (total_hqrounds-1)+(rlc_failed*4) to map the event types to a unique number between 0 and 7
-    # 'type_event' : int((item['total_hqrounds']-1)+(int(item['rlc_failed'])*4))
-    pred_segment_mac_retx = pred_link_type % 4
-    pred_segment_rlc_failed = int(np.floor(pred_link_type / 4))
+    # we use (total_hqrounds-1)+(rfailed*4) to map the event types to a unique number between 0 and 7
+    # 'type_event' : int((item['total_hqrounds']-1)+(int(item['rfailed'])*4))
+    pred_segment_mretx = pred_link_type % 4
+    pred_segment_rfailed = int(np.floor(pred_link_type / 4))
     # consider this a retransmission event
     predicted_link_quality_event = {
         'idx_event' : -1, # we will fix it later
-        'type_event' : int((pred_segment_mac_retx-1)+(int(pred_segment_rlc_failed)*4)),
+        'type_event' : int((pred_segment_mretx-1)+(int(pred_segment_rfailed)*4)),
         'time_since_start' : pred_link_time_since_start,
         'time_since_last_event' : pred_link_dtime,
         'mcs_index' : packet_mcs_index,
@@ -529,7 +530,7 @@ def link_quality_prediction(link_quality_runner, link_source_data,
     logger.info(f"label link_dtime: {label_link_event['time_since_last_event']}, label link_type_pred: {label_link_event['type_event']}, label link_time_since_start: {label_link_event['time_since_start']}")
     #input()
 
-    return predicted_link_quality_event, pred_segment_mac_retx, pred_segment_rlc_failed
+    return predicted_link_quality_event, pred_segment_mretx, pred_segment_rfailed
 
 def packet_arrival_event_prediction(arrival_source_data, arrival_model_runner, exp_config) -> list:
     """
@@ -637,8 +638,8 @@ def packet_arrival_prediction(dataset, arrival_model_runner, num_packets, exp_co
                 'slot' : -1, # will be fixed later
                 'len' : eventtype_psize_mapping[int(predicted_arrival_event_sample['type_event'])],
                 'mcs_index' : label_arrival_scheduling_event['mcs_index'], # FIXME! cheating maybe?
-                'mac_retx' : 0, # don't need
-                'rlc_failed' : 0, # don't need
+                'mretx' : 0, # don't need
+                'rfailed' : 0, # don't need
                 'num_rbs' : 0, # don't need
                 'num_symbols' : 0, # don't need
                 'time_since_start' : predicted_arrival_event_sample['time_since_start'],
@@ -731,7 +732,7 @@ def e2e_delay_prediction(dataset,
                 event['idx_event'] = pos
 
         # predict the scheduling event
-        # the result is the segment's scheduling event, but mac_retx and rlc_failed are not set
+        # the result is the segment's scheduling event, but mretx and rfailed are not set
         # we either use link quality prediction for that or set them to 0
         # the prediction gives a list of samples
         predicted_segment_event_samples = scheduling_prediction(
@@ -741,12 +742,12 @@ def e2e_delay_prediction(dataset,
         # for now we use the first sample
         predicted_segment_event = predicted_segment_event_samples[0]
 
-        predicted_segment_event['mac_retx'] = 0
-        predicted_segment_event['rlc_failed'] = 0
+        predicted_segment_event['mretx'] = 0
+        predicted_segment_event['rfailed'] = 0
         prev_predicted_link_event = {}
         if not dont_predict_link_events:
             # predict link quality event
-            predicted_link_quality_event, pred_segment_mac_retx, pred_segment_rlc_failed = link_quality_prediction(
+            predicted_link_quality_event, pred_segment_mretx, pred_segment_rfailed = link_quality_prediction(
                 link_quality_runner, link_source_data, 
                 packet_0_scheduling_event['mcs_index'], exp_config
             )
@@ -757,8 +758,8 @@ def e2e_delay_prediction(dataset,
                 link_source_data[0].append(predicted_link_quality_event)
             
                 # now complete the predicted segment event and append
-                predicted_segment_event['mac_retx'] = pred_segment_mac_retx
-                predicted_segment_event['rlc_failed'] = pred_segment_rlc_failed
+                predicted_segment_event['mretx'] = pred_segment_mretx
+                predicted_segment_event['rfailed'] = pred_segment_rfailed
                 prev_predicted_link_event = predicted_link_quality_event
             
             logger.info(f"Predicted link event: {prev_predicted_link_event}")
@@ -772,7 +773,7 @@ def e2e_delay_prediction(dataset,
         scheduling_source_data[0].append(predicted_segment_event)
 
         # update the sum_departed_bytes
-        sum_departed_bytes += ( predicted_segment_event['len'] if not predicted_segment_event['rlc_failed'] else 0 )
+        sum_departed_bytes += ( predicted_segment_event['len'] if not predicted_segment_event['rfailed'] else 0 )
 
         # check if a packet is completed
         if sum_departed_bytes >= packet_0_scheduling_event['len']:
@@ -877,33 +878,65 @@ def generate_predictions(args):
     results_folder_addr = folder_addr / 'e2e' / 'prediction_results' / args.name
     results_folder_addr.mkdir(parents=True, exist_ok=True)
 
-    time_bounds = []
-    db_id = 0
-    for result_database_file, time_mask in zip(result_database_files, time_masks):
-        pacekt_analyzer = ULPacketAnalyzer(result_database_file)
-        experiment_length_ts = pacekt_analyzer.last_ueip_ts - pacekt_analyzer.first_ueip_ts
-        begin_ts = pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
-        end_ts = pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
-        time_bounds.append((begin_ts, end_ts))
-        logger.info(f"Database {db_id}, experiment duration: {(experiment_length_ts)} seconds")
-        logger.info(f"Database {db_id}, filtering packets from {begin_ts} to {end_ts}, length: {end_ts-begin_ts} seconds")
-        db_id += 1
-
-    # for mcs_to_bytes function
-    scheduling_analyzer = ULSchedulingAnalyzer(
-        total_prbs_num = total_prbs_num, 
-        symbols_per_slot = symbols_per_slot,
-        slots_per_frame = num_slots_per_frame, 
-        slots_duration_ms = slots_duration_ms, 
-        scheduling_map_num_integers = scheduling_map_num_integers,
-        max_num_frames = max_num_frames,
-        db_addr = result_database_files[0]
-    )
-
     # packet arrival dataset opening
     arrival_conf = e2e_config['packet_arrival']
     with open(folder_addr / 'packet_arrival' / 'datasets' / arrival_conf['dataset_name'] / 'config.json', 'r') as f:
         arrival_dataset_config = json.load(f)
+
+    time_bounds = []
+    db_id = 0
+    for result_database_file, time_mask in zip(result_database_files, time_masks):
+        chan_analyzer = ULChannelAnalyzer(result_database_file)
+        packet_analyzer = ULPacketAnalyzer(result_database_file)
+        scheduling_analyzer = ULSchedulingAnalyzer(
+            total_prbs_num = total_prbs_num, 
+            symbols_per_slot = symbols_per_slot,
+            slots_per_frame = num_slots_per_frame, 
+            slots_duration_ms = slots_duration_ms, 
+            scheduling_map_num_integers = scheduling_map_num_integers,
+            max_num_frames = max_num_frames,
+            db_addr = result_database_file
+        )
+
+        # figure the time bounds
+        experiment_length_ts = packet_analyzer.last_ueip_ts - packet_analyzer.first_ueip_ts
+        begin_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
+        end_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
+        time_bounds.append((begin_ts, end_ts))
+        logger.info(f"Database {db_id}, experiment duration: {(experiment_length_ts)} seconds")
+        logger.info(f"Database {db_id}, filtering packets from {begin_ts} to {end_ts}, length: {end_ts-begin_ts} seconds")
+
+        # figure the stream rnti
+        packets = packet_analyzer.figure_packettx_from_ts(begin_ts, begin_ts+1.0) # just take one second of packets
+        packets_rnti_set = set([item['rlc.attempts'][0]['rnti'] for item in packets])
+        packets_rnti_set.discard(None)
+        if len(packets_rnti_set) > 1:
+            logger.error("Multiple RNTIs in the packet stream, exiting...")
+            return
+        stream_rnti = list(packets_rnti_set)[0]
+
+        # extract the events
+        # packet arrival events
+        packet_arrival_events = extract_packet_arrival_events(
+            packet_analyzer, scheduling_analyzer, begin_ts, end_ts, exp_config, dtime_max = np.inf
+        )
+        # link quality events
+        link_segment_events, link_mcs_events = extract_link_quality_events(
+            chan_analyzer, packet_analyzer, scheduling_analyzer, stream_rnti,
+            begin_ts, end_ts, exp_config, filter_successful_attempts = False,
+            mcs_event_type = 'change', mcs_eval_interval_ms = 100
+        )
+        # scheduling events
+        scheduling_events = extract_scheduling_events(
+            packet_analyzer, scheduling_analyzer, begin_ts, end_ts, exp_config
+        )
+
+
+        db_id += 1
+
+
+
+
 
     psize_eventtype_mapping = {int(k): int(v) for k, v in arrival_dataset_config['psize_eventtype_mapping'].items()}
     packet_arrival_events_arr = extract_packet_arrival_events(
@@ -1170,10 +1203,10 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     #num_event_types_segment_only = (num_event_types-1)/2
 
     # we have 8 label attributes:
-    # label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs
+    # label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs
     # data['label'] dimensions: [num batches, 8 attributes , batch size, seq length]
 
-    h_dtime, h_time, h_event_type, h_slot, h_len, h_mcs, h_mac_retx, h_rlc_failed, h_num_rbs = [],[],[],[],[],[],[],[],[]
+    h_dtime, h_time, h_event_type, h_slot, h_len, h_mcs, h_mretx, h_rfailed, h_num_rbs = [],[],[],[],[],[],[],[],[]
     history_mcs_data = []
     for batch in data['label']:
         h_dtime.append(batch[0])
@@ -1182,8 +1215,8 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
         h_slot.append(batch[3])
         h_len.append(batch[4])
         h_mcs.append(batch[5])
-        h_mac_retx.append(batch[6])
-        h_rlc_failed.append(batch[7])
+        h_mretx.append(batch[6])
+        h_rfailed.append(batch[7])
         h_num_rbs.append(batch[8])
 
     ch_dtime = np.concatenate(h_dtime, axis=0)
@@ -1192,8 +1225,8 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     ch_slot = np.concatenate(h_slot, axis=0)
     ch_len = np.concatenate(h_len, axis=0)
     ch_mcs = np.concatenate(h_mcs, axis=0)
-    ch_mac_retx = np.concatenate(h_mac_retx, axis=0)
-    ch_rlc_failed = np.concatenate(h_rlc_failed, axis=0)
+    ch_mretx = np.concatenate(h_mretx, axis=0)
+    ch_rfailed = np.concatenate(h_rfailed, axis=0)
     ch_num_rbs = np.concatenate(h_num_rbs, axis=0)
 
     # data['pred'] dimensions: [num batches, 1 , batch size, num probability samples]
@@ -1224,8 +1257,8 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     ch_event_type = ch_event_type[ar_index,:]
     ch_len = ch_len[ar_index,:]
     ch_mcs = ch_mcs[ar_index,:]
-    ch_mac_retx = ch_mac_retx[ar_index,:]
-    ch_rlc_failed = ch_rlc_failed[ar_index,:]
+    ch_mretx = ch_mretx[ar_index,:]
+    ch_rfailed = ch_rfailed[ar_index,:]
     ch_num_rbs = ch_num_rbs[ar_index,:]
 
     logger.info(f"Event types in the history plus the label: {ch_event_type}")
@@ -1238,16 +1271,16 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
 
     # history packets time series
     packet_len_list = np.array([ch_len[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
-    packet_mrtx_list = np.array([ch_mac_retx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
-    packet_rrtx_list = np.array([ch_rlc_failed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    packet_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    packet_rrtx_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
     packet_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
     packet_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
 
     # history segments time series
     segment_len_list = np.array([ch_len[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_type_list = np.array([ch_event_type[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
-    segment_mrtx_list = np.array([ch_mac_retx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
-    segment_rrtx_list = np.array([ch_rlc_failed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
+    segment_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
+    segment_rrtx_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_dt_list = np.array([ch_dtime[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
@@ -1309,10 +1342,10 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
     #num_event_types_segment_only = (num_event_types-1)/2
 
     # we have 8 label attributes:
-    # label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, num_rbs_seqs
+    # label_dtime, label_time, label_type, slot_seqs, len_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs
     # data['label'] dimensions: [num batches, 8 attributes , batch size, seq length]
 
-    h_dtime, h_time, h_event_type, h_slot, h_len, h_mcs, h_mac_retx, h_rlc_failed, h_num_rbs = [],[],[],[],[],[],[],[],[]
+    h_dtime, h_time, h_event_type, h_slot, h_len, h_mcs, h_mretx, h_rfailed, h_num_rbs = [],[],[],[],[],[],[],[],[]
     history_mcs_data = []
     for batch in data['label']:
         h_dtime.append(batch[0])
@@ -1321,8 +1354,8 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
         h_slot.append(batch[3])
         h_len.append(batch[4])
         h_mcs.append(batch[5])
-        h_mac_retx.append(batch[6])
-        h_rlc_failed.append(batch[7])
+        h_mretx.append(batch[6])
+        h_rfailed.append(batch[7])
         h_num_rbs.append(batch[8])
 
     ch_dtime = np.concatenate(h_dtime, axis=0)
@@ -1331,8 +1364,8 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
     ch_slot = np.concatenate(h_slot, axis=0)
     ch_len = np.concatenate(h_len, axis=0)
     ch_mcs = np.concatenate(h_mcs, axis=0)
-    ch_mac_retx = np.concatenate(h_mac_retx, axis=0)
-    ch_rlc_failed = np.concatenate(h_rlc_failed, axis=0)
+    ch_mretx = np.concatenate(h_mretx, axis=0)
+    ch_rfailed = np.concatenate(h_rfailed, axis=0)
     ch_num_rbs = np.concatenate(h_num_rbs, axis=0)
 
 
@@ -1366,8 +1399,8 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
     ch_event_type = ch_event_type[ar_index,:]
     ch_len = ch_len[ar_index,:]
     ch_mcs = ch_mcs[ar_index,:]
-    ch_mac_retx = ch_mac_retx[ar_index,:]
-    ch_rlc_failed = ch_rlc_failed[ar_index,:]
+    ch_mretx = ch_mretx[ar_index,:]
+    ch_rfailed = ch_rfailed[ar_index,:]
     ch_num_rbs = ch_num_rbs[ar_index,:]
 
     logger.info(f"Event types in the history plus the label: {ch_event_type}")
@@ -1380,16 +1413,16 @@ def plot_sampling_predictions_1D(dataset_config, generation_output_config, data,
 
     # history packets time series
     packet_len_list = np.array([ch_len[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
-    packet_mrtx_list = np.array([ch_mac_retx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
-    packet_rrtx_list = np.array([ch_rlc_failed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    packet_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
+    packet_rrtx_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
     packet_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
     packet_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] == 0])
 
     # history segments time series
     segment_len_list = np.array([ch_len[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_type_list = np.array([ch_event_type[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
-    segment_mrtx_list = np.array([ch_mac_retx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
-    segment_rrtx_list = np.array([ch_rlc_failed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
+    segment_mrtx_list = np.array([ch_mretx[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
+    segment_rrtx_list = np.array([ch_rfailed[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_mcs_list = np.array([ch_mcs[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_ts_list = np.array([ch_time[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])
     segment_dt_list = np.array([ch_dtime[idx] for idx, _ in enumerate(ch_dtime) if ch_event_type[idx] > 0])

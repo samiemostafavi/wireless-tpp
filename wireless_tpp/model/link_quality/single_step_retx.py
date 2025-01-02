@@ -222,7 +222,7 @@ class SingleStepRETX(TorchBaseModel):
     
         return final_output
 
-    def forward(self, num_rbs_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, time_seqs, attention_mask):
+    def forward(self, num_rbs_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, time_seqs, attention_mask):
         """Call the model
 
         Args:
@@ -236,13 +236,13 @@ class SingleStepRETX(TorchBaseModel):
         # convert type_seqs to int type for embedding
         num_rbs_seqs = num_rbs_seqs.long()
         mcs_seqs = mcs_seqs.long()
-        mac_retx_seqs = mac_retx_seqs.long()
-        rlc_failed_seqs = rlc_failed_seqs.long()
+        mretx_seqs = mretx_seqs.long()
+        rfailed_seqs = rfailed_seqs.long()
 
         # [batch_size, seq_len, hidden_size (d_model)]
         # Temporal and type encoding
         time_enc = self.layer_temporal_encoding(time_seqs)
-        mretx_enc = self.layer_mretx_emb(mac_retx_seqs)
+        mretx_enc = self.layer_mretx_emb(mretx_seqs)
 
         # 2) Build a list to concatenate later (maybe)
         emb_list = [time_enc, mretx_enc]
@@ -261,7 +261,7 @@ class SingleStepRETX(TorchBaseModel):
             mcs_enc = 0
 
         if self.include_rfailed:
-            rfailed_enc = self.layer_rfailed_emb(rlc_failed_seqs)
+            rfailed_enc = self.layer_rfailed_emb(rfailed_seqs)
             emb_list.append(rfailed_enc)
         else:
             rfailed_enc = 0

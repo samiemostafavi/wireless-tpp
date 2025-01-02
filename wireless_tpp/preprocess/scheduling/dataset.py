@@ -11,12 +11,12 @@ class TPPDatasetScheduling(BaseTPPDataset):
         self.data_dict = data
 
         # we incorporate the following additional keys in the source_data
-        # 'len' 'mcs_index' 'mac_retx' 'rlc_failed' 'num_rbs'
+        # 'len' 'mcs_index' 'mretx' 'rfailed' 'num_rbs'
         self.slot_seqs = self.data_dict['slot_seqs']
         self.len_seqs = self.data_dict['len_seqs']
         self.mcs_seqs = self.data_dict['mcs_seqs']
-        self.mac_retx_seqs = self.data_dict['mac_retx_seqs']
-        self.rlc_failed_seqs = self.data_dict['rlc_failed_seqs']
+        self.mretx_seqs = self.data_dict['mretx_seqs']
+        self.rfailed_seqs = self.data_dict['rfailed_seqs']
         self.num_rbs_seqs = self.data_dict['num_rbs_seqs']
 
         # default keys
@@ -34,8 +34,8 @@ class TPPDatasetScheduling(BaseTPPDataset):
             len(self.slot_seqs) == len(self.time_seqs) and
             len(self.len_seqs) == len(self.time_seqs) and
             len(self.mcs_seqs) == len(self.time_seqs) and
-            len(self.mac_retx_seqs) == len(self.time_seqs) and
-            len(self.rlc_failed_seqs) == len(self.time_seqs) and 
+            len(self.mretx_seqs) == len(self.time_seqs) and
+            len(self.rfailed_seqs) == len(self.time_seqs) and 
             len(self.num_rbs_seqs) == len(self.time_seqs) and 
             len(self.time_seqs) == len(self.type_seqs) and 
             len(self.time_delta_seqs) == len(self.type_seqs),
@@ -60,8 +60,8 @@ class TPPDatasetScheduling(BaseTPPDataset):
                 'slot_seqs': self.slot_seqs[idx],
                 'len_seqs': self.len_seqs[idx],
                 'mcs_seqs': self.mcs_seqs[idx],
-                'mac_retx_seqs': self.mac_retx_seqs[idx],
-                'rlc_failed_seqs': self.rlc_failed_seqs[idx],
+                'mretx_seqs': self.mretx_seqs[idx],
+                'rfailed_seqs': self.rfailed_seqs[idx],
                 'num_rbs_seqs': self.num_rbs_seqs[idx],
                 'time_seqs': self.time_seqs[idx], 
                 'time_delta_seqs': self.time_delta_seqs[idx],
@@ -86,10 +86,10 @@ class TPPDatasetScheduling(BaseTPPDataset):
             val_seqs = self.len_seqs
         elif inp_type == 'mcs_seqs':
             val_seqs = self.mcs_seqs
-        elif inp_type == 'mac_retx_seqs':
-            val_seqs = self.mac_retx_seqs
-        elif inp_type == 'rlc_failed_seqs':
-            val_seqs = self.rlc_failed_seqs
+        elif inp_type == 'mretx_seqs':
+            val_seqs = self.mretx_seqs
+        elif inp_type == 'rfailed_seqs':
+            val_seqs = self.rfailed_seqs
         elif inp_type == 'num_rbs_seqs':
             val_seqs = self.num_rbs_seqs
         else:

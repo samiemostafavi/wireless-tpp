@@ -88,13 +88,13 @@ def process_failed_rlc_events(all_ul_schedules, failed_ue_rlc_attempts, max_harq
             'total_hqrounds' : 0,
             'num_rbs' : num_rbs,
             'hqpid' : hqpid,
-            'rlc_failed' : True,
+            'rfailed' : True,
             'related_schedules_list' : []
         }
         
         # find it in all_ul_schedules_df
-        rlc_failed_schedule, rfs_idx = find_the_schedule(all_ul_schedules_df, ue_mac_attempt_0)
-        if rlc_failed_schedule == None:
+        rfailed_schedule, rfs_idx = find_the_schedule(all_ul_schedules_df, ue_mac_attempt_0)
+        if rfailed_schedule == None:
             logger.warning(f"No schedule found for failed rlc attempt: {ue_rlc_row}")
             failed_harq_group['timestamp'] = ue_mac_attempt_0['phy.tx.timestamp']
             failed_harq_group['frame'] = ue_mac_attempt_0['phy.tx.fm']
@@ -103,14 +103,14 @@ def process_failed_rlc_events(all_ul_schedules, failed_ue_rlc_attempts, max_harq
             continue
 
         # gnb_sched_reports_df: ['sched.ue.rnti', 'sched.ue.frame', 'sched.ue.slot', 'sched.ue.frametx', 'sched.ue.slottx', 'sched.ue.tbs', 'sched.ue.mcs', 'sched.ue.timestamp', 'sched.ue.rbs', 'sched.cause.type', 'sched.cause.frame', 'sched.cause.slot', 'sched.cause.diff', 'sched.cause.timestamp', 'sched.cause.buf', 'sched.cause.sched', 'sched.cause.hqround', 'sched.cause.hqpid']
-        related_schedules_list = [rlc_failed_schedule]
+        related_schedules_list = [rfailed_schedule]
         
-        if pd.isnull(rlc_failed_schedule['sched.cause.hqround']):
+        if pd.isnull(rfailed_schedule['sched.cause.hqround']):
             cur_hqround = 0
             # it means it is the first attempt and it was failed
-            failed_harq_group['timestamp'] = rlc_failed_schedule['ue_scheduled_ts']
+            failed_harq_group['timestamp'] = rfailed_schedule['ue_scheduled_ts']
         else:
-            cur_hqround = rlc_failed_schedule['sched.cause.hqround']
+            cur_hqround = rfailed_schedule['sched.cause.hqround']
             # it means it was the middle attempt and it was failed
             # iterate backwards over failed_ul_schedules from rrfs_idx until we find the attempts with 'sched.cause.hqround'<cur_hqround or pd.isnull('sched.cause.hqround') and the same 'sched.cause.hqpid'
             for idx in range(rfs_idx-1, -1, -1):
@@ -182,7 +182,7 @@ def process_successful_retx_schedule_events(all_ul_schedules, successful_retx_sc
             'total_hqrounds' : hqround+1,
             'hqpid' : hqpid,
             'num_rbs' : num_rbs,
-            'rlc_failed' : False,
+            'rfailed' : False,
             'schedule_id' : None,
             'related_schedules_list' : []
         }
@@ -219,14 +219,14 @@ def process_successful_retx_schedule_events(all_ul_schedules, successful_retx_sc
 
     return failed_harq_groups
 
-def filter_successful_retx_schedule(grouped_retx_schedules, grouped_rlc_failed_schedules):
+def filter_successful_retx_schedule(grouped_retx_schedules, grouped_rfailed_schedules):
 
     logger.info(f"Number of successful retx schedules before filtering: {len(grouped_retx_schedules)}")
 
     results = []
     for retx_group in grouped_retx_schedules:
         found_similar = False
-        for rlc_group in grouped_rlc_failed_schedules:
+        for rlc_group in grouped_rfailed_schedules:
             if (retx_group['hqpid'] == rlc_group['hqpid'] and
                     abs(retx_group['timestamp'] - rlc_group['timestamp']) < 0.001): # 1ms
                 logger.info(f"Found similar: {retx_group['frame']} {retx_group['slot']}, {rlc_group['frame']}, {rlc_group['slot']}")
@@ -297,7 +297,7 @@ def plot_data_chan_based(args):
     failed_ul_schedules_ts_list, failed_ul_schedules_text_list, failed_ul_schedules_val_list = np.array([]), np.array([]), np.array([])
     failed_ue_mac_text_list, failed_ue_mac_val_list, failed_ue_mac_ts_list = np.array([]), np.array([]), np.array([])
     retx_schedules_val_list, retx_schedules_text_list, retx_schedules_ts_list = np.array([]), np.array([]), np.array([])
-    grouped_rlc_failed_schedules_val_list, grouped_rlc_failed_schedules_text_list, grouped_rlc_failed_schedules_ts_list = np.array([]), np.array([]), np.array([])
+    grouped_rfailed_schedules_val_list, grouped_rfailed_schedules_text_list, grouped_rfailed_schedules_ts_list = np.array([]), np.array([]), np.array([])
     grouped_retx_schedules_val_list, grouped_retx_schedules_text_list, grouped_retx_schedules_ts_list = np.array([]), np.array([]), np.array([])
 
     prev_end_ts = 0
@@ -391,15 +391,15 @@ def plot_data_chan_based(args):
             ue_ndi0_mac_ts_list = np.concatenate((ue_ndi0_mac_ts_list,np.array([(item['phy.tx.timestamp']-begin_ts+prev_end_ts)*1000 for item in ue_ndi0_mac_attempts])))
 
             # process RLC retransmissions
-            grouped_rlc_failed_schedules = process_failed_rlc_events(all_ul_schedules, failed_ue_rlc_attempts, max_harq_attempts)
-            grouped_rlc_failed_schedules_val_list = np.concatenate((grouped_rlc_failed_schedules_val_list,np.array([item['total_hqrounds'] for item in grouped_rlc_failed_schedules])))
-            grouped_rlc_failed_schedules_text_list = np.concatenate((grouped_rlc_failed_schedules_text_list,np.array([item['hqpid'] for item in grouped_rlc_failed_schedules])))
-            grouped_rlc_failed_schedules_ts_list = np.concatenate((grouped_rlc_failed_schedules_ts_list,np.array([(item['timestamp']-begin_ts+prev_end_ts)*1000 for item in grouped_rlc_failed_schedules])))
+            grouped_rfailed_schedules = process_failed_rlc_events(all_ul_schedules, failed_ue_rlc_attempts, max_harq_attempts)
+            grouped_rfailed_schedules_val_list = np.concatenate((grouped_rfailed_schedules_val_list,np.array([item['total_hqrounds'] for item in grouped_rfailed_schedules])))
+            grouped_rfailed_schedules_text_list = np.concatenate((grouped_rfailed_schedules_text_list,np.array([item['hqpid'] for item in grouped_rfailed_schedules])))
+            grouped_rfailed_schedules_ts_list = np.concatenate((grouped_rfailed_schedules_ts_list,np.array([(item['timestamp']-begin_ts+prev_end_ts)*1000 for item in grouped_rfailed_schedules])))
 
             # process successful MAC retransmissions
             grouped_retx_schedules = process_successful_retx_schedule_events(all_ul_schedules, successful_retx_schedule)
             # filter out the successful retx schedules that are actually failed
-            grouped_retx_schedules = filter_successful_retx_schedule(grouped_retx_schedules, grouped_rlc_failed_schedules)
+            grouped_retx_schedules = filter_successful_retx_schedule(grouped_retx_schedules, grouped_rfailed_schedules)
             grouped_retx_schedules_val_list = np.concatenate((grouped_retx_schedules_val_list,np.array([item['total_hqrounds'] for item in grouped_retx_schedules])))
             grouped_retx_schedules_text_list = np.concatenate((grouped_retx_schedules_text_list,np.array([item['hqpid'] for item in grouped_retx_schedules])))
             grouped_retx_schedules_ts_list = np.concatenate((grouped_retx_schedules_ts_list,np.array([(item['timestamp']-begin_ts+prev_end_ts)*1000 for item in grouped_retx_schedules])))
@@ -448,8 +448,8 @@ def plot_data_chan_based(args):
         # for failed_ue_rlc attempts:
         fig.add_trace(go.Scatter(x=failed_ue_rlc_ts_list, y=failed_ue_rlc_val_list-0.5, mode='markers', name='Failed RLC attempts', marker=dict(symbol='triangle-down')), row=2, col=1)
         
-        # for grouped_rlc_failed_schedules_val_list:
-        fig.add_trace(go.Scatter(x=grouped_rlc_failed_schedules_ts_list, y=grouped_rlc_failed_schedules_val_list, mode='markers+text', name='Processed failed RLC', marker=dict(symbol='triangle-up'), text=grouped_rlc_failed_schedules_text_list, textposition='top center'), row=3, col=1)
+        # for grouped_rfailed_schedules_val_list:
+        fig.add_trace(go.Scatter(x=grouped_rfailed_schedules_ts_list, y=grouped_rfailed_schedules_val_list, mode='markers+text', name='Processed failed RLC', marker=dict(symbol='triangle-up'), text=grouped_rfailed_schedules_text_list, textposition='top center'), row=3, col=1)
 
         # for grouped_retx_schedules_val_list:
         fig.add_trace(go.Scatter(x=grouped_retx_schedules_ts_list, y=grouped_retx_schedules_val_list+0.1, mode='markers+text', name='Processed retx event', marker=dict(symbol='triangle-down'), text=grouped_retx_schedules_text_list, textposition='top center'), row=3, col=1)
@@ -640,16 +640,16 @@ def extract_link_quality_events_chan_based(result_database_files, time_bounds, s
         all_ul_schedules = sched_analyzer.find_all_schedules_from_ts(begin_ts, end_ts, stream_rnti, scheduling_time_ahead_ms/1000)
 
         # process RLC retransmissions
-        grouped_rlc_failed_schedules = process_failed_rlc_events(all_ul_schedules, failed_ue_rlc_attempts, max_harq_attempts)
+        grouped_rfailed_schedules = process_failed_rlc_events(all_ul_schedules, failed_ue_rlc_attempts, max_harq_attempts)
 
         # process successful MAC retransmissions
         grouped_retx_schedules = process_successful_retx_schedule_events(all_ul_schedules, successful_retx_schedule)
 
-        # filter out the retx_schedules that are in the grouped_rlc_failed_schedules
-        grouped_retx_schedules = filter_successful_retx_schedule(grouped_retx_schedules, grouped_rlc_failed_schedules)
+        # filter out the retx_schedules that are in the grouped_rfailed_schedules
+        grouped_retx_schedules = filter_successful_retx_schedule(grouped_retx_schedules, grouped_rfailed_schedules)
 
         # combine the two lists
-        combined_events = [ *grouped_retx_schedules, *grouped_rlc_failed_schedules ]
+        combined_events = [ *grouped_retx_schedules, *grouped_rfailed_schedules ]
         # sort the events based on timestamp
         combined_events = sorted(combined_events, key=lambda x: x['timestamp'], reverse=False)
 
@@ -726,7 +726,7 @@ def extract_link_quality_events_chan_based(result_database_files, time_bounds, s
                 'type_event' : 0, # retx event
                 'timestamp' : item['timestamp'],
                 'mcs_index' : mcs_index,
-                'rfailed' : int(item['rlc_failed']),
+                'rfailed' : int(item['rfailed']),
                 'mretx' : int(item['total_hqrounds']),
                 'num_rbs': int(item['num_rbs']),
             })

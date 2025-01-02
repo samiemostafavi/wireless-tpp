@@ -40,7 +40,6 @@ def plot_data(args):
         f.write(json_obj)
 
     dtime_max = dataset_config['dtime_max']
-    filter_packet_sizes = dataset_config['filter_packet_sizes']
 
     time_bounds = []
     db_id = 0
@@ -55,7 +54,7 @@ def plot_data(args):
         db_id += 1
 
     packet_size_arr, packet_inp_ts_arr, frame_strt_ts_arr, slot_num_arr, delta_times_ms = \
-        extract_packet_arrivals_for_plot(result_database_files, time_bounds, filter_packet_sizes, exp_config)
+        extract_packet_arrivals_for_plot(result_database_files, time_bounds, exp_config)
 
     # Plot probability distribution of delta times
     # Create a histogram plot of the delta times
@@ -83,7 +82,7 @@ def plot_data(args):
     fig3.update_layout(title='Timeseries of packet sizes', xaxis_title='Packet Input Time', yaxis_title='Packet Sizes (bytes)')
     fig3.write_html(str(results_folder_addr / 'packet_sizes.html'))
 
-def extract_packet_arrivals_for_plot(result_database_files, time_bounds, filter_packet_sizes, exp_config):
+def extract_packet_arrivals_for_plot(result_database_files, time_bounds, exp_config):
     
     slots_duration_ms = exp_config['slots_duration_ms']
     num_slots_per_frame = exp_config['slots_per_frame']
@@ -123,8 +122,6 @@ def extract_packet_arrivals_for_plot(result_database_files, time_bounds, filter_
         delta_times_ms_this_db = []
         prev_arrival_ts = 0
         for packet in packets:
-            if len(filter_packet_sizes) > 0 and packet['ip.in.length'] not in filter_packet_sizes:
-                continue
             frame_start_ts, frame_num, slot_num = scheduling_analyzer.find_frame_slot_from_ts(
                 timestamp=packet['ip.in.timestamp'], 
                 #SCHED_OFFSET_S=0.002 # 2ms which is 4*slot_duration_ms
@@ -170,86 +167,58 @@ def create_training_dataset(args):
         exp_config = json.load(f)
 
     time_masks = dataset_config['time_masks']
-    filter_packet_sizes = dataset_config['filter_packet_sizes']
     window_config = dataset_config['window_config']
     history_window_size = window_config['size']
     dataset_size_max = dataset_config['dataset_size_max']
     split_ratios = dataset_config['split_ratios']
     dtime_max = dataset_config['dtime_max']
 
-    # figure out the unique packet sizes in all databases
-    packet_sizes_set = set()
-    time_bounds = []
+    slots_duration_ms = exp_config['slots_duration_ms']
+    num_slots_per_frame = exp_config['slots_per_frame']
+    total_prbs_num = exp_config['total_prbs_num']
+    symbols_per_slot = exp_config['symbols_per_slot']
+    scheduling_map_num_integers = exp_config['scheduling_map_num_integers']
+    max_num_frames = exp_config['max_num_frames']
+    scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
+
     db_id = 0
+    dataset = []
     for result_database_file, time_mask in zip(result_database_files, time_masks):
-        pacekt_analyzer = ULPacketAnalyzer(result_database_file)
-        experiment_length_ts = pacekt_analyzer.last_ueip_ts - pacekt_analyzer.first_ueip_ts
-        begin_ts = pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
-        end_ts = pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
+        packet_analyzer = ULPacketAnalyzer(result_database_file)
+        scheduling_analyzer = ULSchedulingAnalyzer(
+            total_prbs_num = total_prbs_num, 
+            symbols_per_slot = symbols_per_slot,
+            slots_per_frame = num_slots_per_frame, 
+            slots_duration_ms = slots_duration_ms, 
+            scheduling_map_num_integers = scheduling_map_num_integers,
+            max_num_frames = max_num_frames,
+            db_addr = result_database_file
+        )
+        experiment_length_ts = packet_analyzer.last_ueip_ts - packet_analyzer.first_ueip_ts
+        begin_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
+        end_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
         logger.info(f"Database id: {db_id}, experiment duration: {(experiment_length_ts)} seconds")
         logger.info(f"Database id: {db_id}, filtering packets from {begin_ts} to {end_ts}, length: {end_ts-begin_ts} seconds")
-        time_bounds.append((begin_ts, end_ts))
-        packets = pacekt_analyzer.figure_packet_arrivals_from_ts(begin_ts, end_ts)
-        for packet in packets:
-            if len(filter_packet_sizes) > 0 and packet['ip.in.length'] not in filter_packet_sizes:
-                continue
-            packet_sizes_set.add(int(packet['ip.in.length']))
-        db_id += 1
-    dim_process = len(list(packet_sizes_set))
-    logger.info(f"Number of unique packet sizes and dim_process: {dim_process}")
 
-    if dim_process > 20 or args.notypemapping:
-        logger.warning("No event type mapping: arg.notypemapping is set or dim_process > 20")
-        psize_eventtype_mapping = None
-    else:
-        # sort packet_sizes_set and make a dict to map packet sizes to integers
-        packet_sizes_sorted_list = sorted(list(packet_sizes_set))
-        psize_eventtype_mapping = {packet_size: idx for idx, packet_size in enumerate(packet_sizes_sorted_list)}
-        logger.info(f"Packet sizes dict: {psize_eventtype_mapping}")
+        packet_arrival_events = extract_packet_arrival_events(packet_analyzer, scheduling_analyzer, begin_ts, end_ts, exp_config, dtime_max)
 
-    dataset_config = {
-        'dim_process' : dim_process,
-        'psize_eventtype_mapping' : psize_eventtype_mapping,
-        **dataset_config
-    }
-
-    # Save configuration dictionary to a json file
-    results_folder_addr = folder_addr / 'packet_arrival'  / 'datasets' / args.name
-    results_folder_addr.mkdir(parents=True, exist_ok=True)
-    with open(results_folder_addr / 'config.json', 'w') as f:
-        json_obj = json.dumps(dataset_config, indent=4)
-        f.write(json_obj)
-
-    packet_arrival_events_arr = extract_packet_arrival_events(result_database_files, time_bounds, psize_eventtype_mapping, filter_packet_sizes, exp_config, dtime_max)
-
-    dataset = []
-    for packet_arrival_events in packet_arrival_events_arr:
         dataset_this_db = []
-        for idx,_ in enumerate(packet_arrival_events):
-            if idx+history_window_size >= len(packet_arrival_events):
+        for n in range(len(packet_arrival_events) - 2, -1, -1):
+            if n <= history_window_size-1:
                 break
-            events_window = []
-            for pos, event in enumerate(packet_arrival_events[idx:idx+history_window_size]):
-                idx_event = pos
-                events_window.append(
-                    {
-                        'idx_event' : pos,
-                        'type_event': event['type_event'],
-                        'time_since_start' : event['time_since_start'],
-                        'time_since_last_event' : event['time_since_last_event'],
-                    }
-                )        
-
-            #print(events)
-            dataset_this_db.append(events_window)
+            n1 = n + 1
+            hist_sequence = window_history_arrival_events(n1, packet_arrival_events, history_window_size)
+            if len(hist_sequence) > 0:
+                    dataset_this_db.append(hist_sequence)
             if len(dataset_this_db) > dataset_size_max:
                 break
 
         # print length of dataset
         logger.info(f"Number of total entries produced by this db dataset: {len(dataset_this_db)}")
-
         # append elements of one_db_dataset to dataset
-        dataset.extend(dataset_this_db)
+        dataset.extend(dataset_this_db)        
+
+        db_id += 1
 
     # shuffle
     random.shuffle(dataset)
@@ -257,6 +226,18 @@ def create_training_dataset(args):
     # print length of dataset
     logger.info(f"Number of total entries in dataset: {len(dataset)}")
     print(dataset[0])
+
+    dim_process = 10000 # a very large number
+    dataset_config = {
+        'dim_process' : dim_process,
+        **dataset_config
+    }
+    # Save configuration dictionary to a json file
+    results_folder_addr = folder_addr / 'packet_arrival'  / 'datasets' / args.name
+    results_folder_addr.mkdir(parents=True, exist_ok=True)
+    with open(results_folder_addr / 'config.json', 'w') as f:
+        json_obj = json.dumps(dataset_config, indent=4)
+        f.write(json_obj)
 
     # split
     train_num = int(len(dataset)*split_ratios[0])
@@ -288,7 +269,8 @@ def create_training_dataset(args):
     with open(results_folder_addr / 'test.pkl', 'wb') as f:
         pickle.dump(test_ds, f)
 
-def extract_packet_arrival_events(result_database_files, time_bounds, psize_eventtype_mapping, filter_packet_sizes, exp_config, dtime_max):
+
+def extract_packet_arrival_events(packet_analyzer, scheduling_analyzer, begin_ts, end_ts, exp_config, dtime_max):
 
     slots_duration_ms = exp_config['slots_duration_ms']
     num_slots_per_frame = exp_config['slots_per_frame']
@@ -298,58 +280,55 @@ def extract_packet_arrival_events(result_database_files, time_bounds, psize_even
     max_num_frames = exp_config['max_num_frames']
     scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
 
-    packet_arrival_events_arr = []
-    for result_database_file, time_bound in zip(result_database_files, time_bounds):
-        # initiate analyzers
-        pacekt_analyzer = ULPacketAnalyzer(result_database_file)
-        scheduling_analyzer = ULSchedulingAnalyzer(
-            total_prbs_num = total_prbs_num, 
-            symbols_per_slot = symbols_per_slot,
-            slots_per_frame = num_slots_per_frame, 
-            slots_duration_ms = slots_duration_ms, 
-            scheduling_map_num_integers = scheduling_map_num_integers,
-            max_num_frames = max_num_frames,
-            db_addr = result_database_file
+    packets = packet_analyzer.figure_packet_arrivals_from_ts(begin_ts, end_ts)
+    logger.info(f"Number of packets for this duration: {len(packets)}")
+
+    # sort the packets in case they are not sorted
+    packets = sorted(packets, key=lambda x: x['ip.in.timestamp'], reverse=False)
+
+    packet_arrival_events = []
+    last_event_ts = 0
+    for packet in packets:
+        frame_start_ts, frame_num, slot_num = scheduling_analyzer.find_frame_slot_from_ts(
+            timestamp=packet['ip.in.timestamp'],
+            #SCHED_OFFSET_S=0.002 # 2ms which is 4*slot_duration_ms
+            #SCHED_OFFSET_S=0.004 # 4ms which is 8*slot_duration_ms
+            SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
         )
-        begin_ts = time_bound[0]
-        end_ts = time_bound[1]     
-        packets = pacekt_analyzer.figure_packet_arrivals_from_ts(begin_ts, end_ts)
-        logger.info(f"Number of packets for this duration: {len(packets)}")
 
-        # sort the packets in case they are not sorted
-        packets = sorted(packets, key=lambda x: x['ip.in.timestamp'], reverse=False)
+        time_since_frame0 = frame_num*num_slots_per_frame*slots_duration_ms + slot_num*slots_duration_ms
+        time_since_last_event = time_since_frame0-last_event_ts
+        #if time_since_last_event < 0:
+        #    time_since_last_event = time_since_frame0 + max_num_frames*num_slots_per_frame*slots_duration_ms
+        if time_since_last_event < 0:
+            time_since_last_event = time_since_frame0
 
-        packet_arrival_events = []
-        last_event_ts = 0
-        for packet in packets:
-            if len(filter_packet_sizes) > 0 and packet['ip.in.length'] not in filter_packet_sizes:
-                continue
-            frame_start_ts, frame_num, slot_num = scheduling_analyzer.find_frame_slot_from_ts(
-                timestamp=packet['ip.in.timestamp'],
-                #SCHED_OFFSET_S=0.002 # 2ms which is 4*slot_duration_ms
-                #SCHED_OFFSET_S=0.004 # 4ms which is 8*slot_duration_ms
-                SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
-            )
+        last_event_ts = time_since_frame0
 
-            time_since_frame0 = frame_num*num_slots_per_frame*slots_duration_ms + slot_num*slots_duration_ms
-            time_since_last_event = time_since_frame0-last_event_ts
-            #if time_since_last_event < 0:
-            #    time_since_last_event = time_since_frame0 + max_num_frames*num_slots_per_frame*slots_duration_ms
-            if time_since_last_event < 0:
-                time_since_last_event = time_since_frame0
+        if time_since_last_event > dtime_max:
+            continue
 
-            last_event_ts = time_since_frame0
+        packet_arrival_events.append(
+            {
+                'type_event' : packet['ip.in.length'],
+                'time_since_start' : time_since_frame0,
+                'time_since_last_event' : time_since_last_event,
+                'timestamp' : packet['ip.in.timestamp'],
+            }
+        )
 
-            if time_since_last_event > dtime_max:
-                continue
+    return packet_arrival_events
 
-            packet_arrival_events.append(
-                {
-                    'type_event' : psize_eventtype_mapping[packet['ip.in.length']] if psize_eventtype_mapping else packet['ip.in.length'],
-                    'time_since_start' : time_since_frame0,
-                    'time_since_last_event' : time_since_last_event,
-                    'timestamp' : packet['ip.in.timestamp']
-                }
-            )
-        packet_arrival_events_arr.append(packet_arrival_events)
-    return packet_arrival_events_arr
+def window_history_arrival_events(arrival_event_n1_id, packet_arrival_events, history_window_size):
+    n1 = arrival_event_n1_id
+    events_window = []
+    if n1 - history_window_size < 0 or n1 + 1 > len(packet_arrival_events):
+        return []
+    for pos, event in enumerate(packet_arrival_events[n1-history_window_size:n1+1]):
+        events_window.append(
+            {
+                'idx_event' : pos,
+                **event,
+            }
+        )
+    return events_window   
