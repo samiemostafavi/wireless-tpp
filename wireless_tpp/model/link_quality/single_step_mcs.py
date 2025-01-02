@@ -139,7 +139,7 @@ class SingleStepMCS(TorchBaseModel):
         self.linear = nn.Linear(self.hidden_size, self.num_mcs_types)
 
 
-    def forward(self, num_rbs_seqs, mcs_seqs, mac_retx_seqs, rlc_failed_seqs, time_seqs, type_seqs, attention_mask):
+    def forward(self, num_rbs_seqs, mcs_seqs, mretx_seqs, rfailed_seqs, time_seqs, type_seqs, attention_mask):
         """Call the model
 
         Args:
@@ -154,8 +154,8 @@ class SingleStepMCS(TorchBaseModel):
         type_seqs = type_seqs.long()
         num_rbs_seqs = num_rbs_seqs.long()
         mcs_seqs = mcs_seqs.long()
-        mac_retx_seqs = mac_retx_seqs.long()
-        rlc_failed_seqs = rlc_failed_seqs.long()
+        mretx_seqs = mretx_seqs.long()
+        rfailed_seqs = rfailed_seqs.long()
 
         # [batch_size, seq_len, hidden_size (d_model)]
         # Temporal and type encoding
@@ -179,13 +179,13 @@ class SingleStepMCS(TorchBaseModel):
             mcs_enc = 0
 
         if self.include_mretx:
-            mretx_enc = self.layer_mretx_emb(mac_retx_seqs)
+            mretx_enc = self.layer_mretx_emb(mretx_seqs)
             emb_list.append(mretx_enc)
         else:
             mretx_enc = 0
 
         if self.include_rfailed:
-            rfailed_enc = self.layer_rfailed_emb(rlc_failed_seqs)
+            rfailed_enc = self.layer_rfailed_emb(rfailed_seqs)
             emb_list.append(rfailed_enc)
         else:
             rfailed_enc = 0

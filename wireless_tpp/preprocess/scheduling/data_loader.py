@@ -30,12 +30,12 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
         source_data = data[split]
 
         # we incorporate the following additional keys in the source_data
-        # 'len' 'mcs_index' 'mac_retx' 'rlc_failed' 'num_rbs'
+        # 'len' 'mcs_index' 'mretx' 'rfailed' 'num_rbs'
         slot_seqs = [[x["slot"] for x in seq] for seq in source_data]
         len_seqs = [[x["len"] for x in seq] for seq in source_data]
         mcs_seqs = [[x["mcs_index"] for x in seq] for seq in source_data]
-        mac_retx_seqs = [[x["mac_retx"] for x in seq] for seq in source_data]
-        rlc_failed_seqs = [[x["rlc_failed"] for x in seq] for seq in source_data]
+        mretx_seqs = [[x["mretx"] for x in seq] for seq in source_data]
+        rfailed_seqs = [[x["rfailed"] for x in seq] for seq in source_data]
         num_rbs_seqs = [[x["num_rbs"] for x in seq] for seq in source_data]
 
         # default keys
@@ -48,8 +48,8 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
                 'slot_seqs': slot_seqs,
                 'len_seqs': len_seqs,
                 'mcs_seqs': mcs_seqs,
-                'mac_retx_seqs': mac_retx_seqs,
-                'rlc_failed_seqs': rlc_failed_seqs,
+                'mretx_seqs': mretx_seqs,
+                'rfailed_seqs': rfailed_seqs,
                 'num_rbs_seqs': num_rbs_seqs,
                 'time_seqs': time_seqs, 
                 'time_delta_seqs': time_delta_seqs, 
@@ -75,12 +75,12 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
                   "inconsistent dim_process in different splits?")
 
         # we incorporate the following additional keys in the source_data
-        # 'len' 'mcs_index' 'mac_retx' 'rlc_failed' 'num_rbs'
+        # 'len' 'mcs_index' 'mretx' 'rfailed' 'num_rbs'
         slot_seqs = data['slot']
         len_seqs = data['len']
         mcs_seqs = data['mcs_index']
-        mac_retx_seqs = data['mac_retx']
-        rlc_failed_seqs = data['rlc_failed']
+        mretx_seqs = data['mretx']
+        rfailed_seqs = data['rfailed']
         num_rbs_seqs = data['num_rbs']
 
         # default keys
@@ -93,8 +93,8 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
                 'slot_seqs': slot_seqs,
                 'len_seqs': len_seqs,
                 'mcs_seqs': mcs_seqs,
-                'mac_retx_seqs': mac_retx_seqs,
-                'rlc_failed_seqs': rlc_failed_seqs,
+                'mretx_seqs': mretx_seqs,
+                'rfailed_seqs': rfailed_seqs,
                 'num_rbs_seqs': num_rbs_seqs,
                 'time_seqs': time_seqs, 
                 'time_delta_seqs': time_delta_seqs, 
@@ -123,8 +123,8 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
             slot_seqs = [[x["slot"] for x in seq] for seq in self.source_data]
             len_seqs = [[x["len"] for x in seq] for seq in self.source_data]
             mcs_seqs = [[x["mcs_index"] for x in seq] for seq in self.source_data]
-            mac_retx_seqs = [[x["mac_retx"] for x in seq] for seq in self.source_data]
-            rlc_failed_seqs = [[x["rlc_failed"] for x in seq] for seq in self.source_data]
+            mretx_seqs = [[x["mretx"] for x in seq] for seq in self.source_data]
+            rfailed_seqs = [[x["rfailed"] for x in seq] for seq in self.source_data]
             num_rbs_seqs = [[x["num_rbs"] for x in seq] for seq in self.source_data]
             time_seqs = [[x["time_since_start"] for x in seq] for seq in self.source_data]
             type_seqs = [[x["type_event"] for x in seq] for seq in self.source_data]
@@ -134,8 +134,8 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
                     'slot_seqs': slot_seqs,
                     'len_seqs': len_seqs,
                     'mcs_seqs': mcs_seqs,
-                    'mac_retx_seqs': mac_retx_seqs,
-                    'rlc_failed_seqs': rlc_failed_seqs,
+                    'mretx_seqs': mretx_seqs,
+                    'rfailed_seqs': rfailed_seqs,
                     'num_rbs_seqs': num_rbs_seqs,
                     'time_seqs': time_seqs, 
                     'time_delta_seqs': time_delta_seqs, 

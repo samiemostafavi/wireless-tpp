@@ -16,8 +16,11 @@ if not os.getenv('DEBUG'):
     logger.remove()
     logger.add(sys.stdout, level="INFO")
 
+NUM_RBS_PADDING = 106
+MRETX_PADDING = 4
+RFAILED_PADDING = 2
 
-def plot_data_stream_based(args):
+def plot_data(args):
 
     if args.interarrival:
         return figure_retransmission_probabilities(args)
@@ -72,14 +75,6 @@ def plot_data_stream_based(args):
     repeated_ue_rlc_val_list, repeated_ue_rlc_ts_list = np.array([]), np.array([])
     ue_ndi0_mac_val_list, ue_ndi0_mac_text_list, ue_ndi0_mac_ts_list = np.array([]), np.array([]), np.array([])
 
-    # non fast mode
-    failed_ue_rlc_val_list, failed_ue_rlc_ts_list = np.array([]), np.array([])
-    failed_ul_schedules_ts_list, failed_ul_schedules_text_list, failed_ul_schedules_val_list = np.array([]), np.array([]), np.array([])
-    failed_ue_mac_text_list, failed_ue_mac_val_list, failed_ue_mac_ts_list = np.array([]), np.array([]), np.array([])
-    retx_schedules_val_list, retx_schedules_text_list, retx_schedules_ts_list = np.array([]), np.array([]), np.array([])
-    grouped_rlc_failed_schedules_val_list, grouped_rlc_failed_schedules_text_list, grouped_rlc_failed_schedules_ts_list = np.array([]), np.array([]), np.array([])
-    grouped_retx_schedules_val_list, grouped_retx_schedules_text_list, grouped_retx_schedules_ts_list = np.array([]), np.array([]), np.array([])
-
     prev_end_ts = 0
     for result_database_file, time_mask in zip(result_database_files, time_masks):
         # initiate the analyzers
@@ -126,128 +121,43 @@ def plot_data_stream_based(args):
         mcs_val_list = np.concatenate((mcs_val_list, np.array([item['mcs'] for item in mcs_arr if item['rnti'] == stream_rnti])))
         mcs_ts_list = np.concatenate((mcs_ts_list, np.array([(item['timestamp']-begin_ts+prev_end_ts)*1000 for item in mcs_arr if item['rnti'] == stream_rnti])))
 
-        if args.fast:
-            # find repeated RLC attempts
-            repeated_ue_rlc_attempts = chan_analyzer.find_repeated_ue_rlc_attempts_from_ts(begin_ts, end_ts)
-            repeated_ue_rlc_val_list = np.concatenate((repeated_ue_rlc_val_list, np.array([0 for _ in repeated_ue_rlc_attempts])))
-            repeated_ue_rlc_ts_list = np.concatenate((repeated_ue_rlc_ts_list, np.array([(item['rlc.txpdu.timestamp']-begin_ts+prev_end_ts)*1000 for item in repeated_ue_rlc_attempts])))
 
-            # find MAC attempts with ndi=0 (NACKs basically)
-            ue_ndi0_mac_attempts = chan_analyzer.find_ndi0_ue_mac_attempts_from_ts(begin_ts, end_ts)
-            ue_ndi0_mac_val_list = np.concatenate((ue_ndi0_mac_val_list, np.array([item['phy.tx.real_rvi'] for item in ue_ndi0_mac_attempts])))
-            ue_ndi0_mac_text_list = np.concatenate((ue_ndi0_mac_text_list, np.array([item['mac.harq.hqpid'] for item in ue_ndi0_mac_attempts])))
-            ue_ndi0_mac_ts_list = np.concatenate((ue_ndi0_mac_ts_list, np.array([(item['phy.tx.timestamp']-begin_ts+prev_end_ts)*1000 for item in ue_ndi0_mac_attempts])))
+        # find repeated RLC attempts
+        repeated_ue_rlc_attempts = chan_analyzer.find_repeated_ue_rlc_attempts_from_ts(begin_ts, end_ts)
+        repeated_ue_rlc_val_list = np.concatenate((repeated_ue_rlc_val_list, np.array([0 for _ in repeated_ue_rlc_attempts])))
+        repeated_ue_rlc_ts_list = np.concatenate((repeated_ue_rlc_ts_list, np.array([(item['rlc.txpdu.timestamp']-begin_ts+prev_end_ts)*1000 for item in repeated_ue_rlc_attempts])))
 
-        else:
-            # find repeated RLC attempts
-            failed_ue_rlc_attempts = chan_analyzer.find_failed_ue_rlc_segments_from_ts(begin_ts, end_ts)
-            failed_ue_rlc_val_list = np.concatenate((failed_ue_rlc_val_list,np.array([0 for _ in failed_ue_rlc_attempts])))
-            failed_ue_rlc_ts_list = np.concatenate((failed_ue_rlc_ts_list,np.array([(item['rlc.txpdu.timestamp']-begin_ts+prev_end_ts)*1000 for item in failed_ue_rlc_attempts])))
+        # find MAC attempts with ndi=0 (NACKs basically)
+        ue_ndi0_mac_attempts = chan_analyzer.find_ndi0_ue_mac_attempts_from_ts(begin_ts, end_ts)
+        ue_ndi0_mac_val_list = np.concatenate((ue_ndi0_mac_val_list, np.array([item['phy.tx.real_rvi'] for item in ue_ndi0_mac_attempts])))
+        ue_ndi0_mac_text_list = np.concatenate((ue_ndi0_mac_text_list, np.array([item['mac.harq.hqpid'] for item in ue_ndi0_mac_attempts])))
+        ue_ndi0_mac_ts_list = np.concatenate((ue_ndi0_mac_ts_list, np.array([(item['phy.tx.timestamp']-begin_ts+prev_end_ts)*1000 for item in ue_ndi0_mac_attempts])))
 
-            # find all and failed scheduling events
-            all_ul_schedules = sched_analyzer.find_all_schedules_from_ts(begin_ts, end_ts, stream_rnti, scheduling_time_ahead_ms/1000)
-            failed_ul_schedules = sched_analyzer.find_failed_schedules_from_ts(begin_ts, end_ts, stream_rnti, scheduling_time_ahead_ms/1000)
-            failed_ul_schedules_ts_list = np.concatenate((failed_ul_schedules_ts_list,np.array([(item['ue_scheduled_ts']-begin_ts+prev_end_ts)*1000 for item in failed_ul_schedules])))
-            failed_ul_schedules_text_list = np.concatenate((failed_ul_schedules_text_list,np.array([ item['sched.cause.hqpid'] for item in failed_ul_schedules])))
-            failed_ul_schedules_val_list = np.concatenate((failed_ul_schedules_val_list,np.array([ item['sched.cause.hqround'] if item['sched.cause.type'] == 4 else 0 for item in failed_ul_schedules])))
-            
-            # find failed ue mac attempts
-            failed_ue_mac_attempts = chan_analyzer.find_failed_ue_mac_attempts_from_ts(begin_ts, end_ts, stream_rnti)
-            failed_ue_mac_text_list = np.concatenate((failed_ue_mac_text_list,np.array([ item['mac.harq.hqpid'] for item in failed_ue_mac_attempts ])))
-            failed_ue_mac_val_list = np.concatenate((failed_ue_mac_val_list,np.array([ item['phy.tx.real_rvi'] for item in failed_ue_mac_attempts ])))
-            failed_ue_mac_ts_list = np.concatenate((failed_ue_mac_ts_list,np.array([ (item['phy.tx.timestamp']-begin_ts+prev_end_ts)*1000 for item in failed_ue_mac_attempts ])))
-            
-            # find retx schedules
-            retx_schedules = sched_analyzer.find_retx_schedules_from_ts(begin_ts, end_ts, stream_rnti, SCHED_OFFSET_S=scheduling_time_ahead_ms/1000)
-            successful_retx_schedule = sched_analyzer.find_retx_schedules_from_ts(begin_ts, end_ts, stream_rnti, SCHED_OFFSET_S=scheduling_time_ahead_ms/1000, only_successful=True)
-            retx_schedules_val_list = np.concatenate((retx_schedules_val_list,np.array([item['sched.cause.hqround'] for item in retx_schedules])))
-            retx_schedules_text_list = np.concatenate((retx_schedules_text_list,np.array([item['sched.cause.hqpid'] for item in retx_schedules])))
-            retx_schedules_ts_list = np.concatenate((retx_schedules_ts_list,np.array([(item['ue_scheduled_ts']-begin_ts+prev_end_ts)*1000 for item in retx_schedules])))
 
-            # find MAC attempts with ndi=0 (NACKs basically)
-            ue_ndi0_mac_attempts = chan_analyzer.find_ndi0_ue_mac_attempts_from_ts(begin_ts, end_ts)
-            ue_ndi0_mac_val_list = np.concatenate((ue_ndi0_mac_val_list,np.array([item['phy.tx.real_rvi'] for item in ue_ndi0_mac_attempts])))
-            ue_ndi0_mac_text_list = np.concatenate((ue_ndi0_mac_text_list,np.array([item['mac.harq.hqpid'] for item in ue_ndi0_mac_attempts])))
-            ue_ndi0_mac_ts_list = np.concatenate((ue_ndi0_mac_ts_list,np.array([(item['phy.tx.timestamp']-begin_ts+prev_end_ts)*1000 for item in ue_ndi0_mac_attempts])))
+    # Create a subplot figure with 2 rows
+    fig = make_subplots(rows=2, cols=1, subplot_titles=('MCS Index', 'Packet arrivals'))
+    fig.add_trace(go.Scatter(x=mcs_ts_list, y=mcs_val_list, mode='lines+markers', name='MCS value', marker=dict(symbol='circle')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=arrivals_ts_list, y=arrivals_size_list, mode='markers', name='Packet arrivals', marker=dict(symbol='square')), row=2, col=1)
 
-            # process RLC retransmissions
-            grouped_rlc_failed_schedules = process_failed_rlc_events(all_ul_schedules, failed_ue_rlc_attempts, max_harq_attempts)
-            grouped_rlc_failed_schedules_val_list = np.concatenate((grouped_rlc_failed_schedules_val_list,np.array([item['total_hqrounds'] for item in grouped_rlc_failed_schedules])))
-            grouped_rlc_failed_schedules_text_list = np.concatenate((grouped_rlc_failed_schedules_text_list,np.array([item['hqpid'] for item in grouped_rlc_failed_schedules])))
-            grouped_rlc_failed_schedules_ts_list = np.concatenate((grouped_rlc_failed_schedules_ts_list,np.array([(item['timestamp']-begin_ts+prev_end_ts)*1000 for item in grouped_rlc_failed_schedules])))
+    # for failed_ue_rlc attempts:
+    fig.add_trace(go.Scatter(x=repeated_ue_rlc_ts_list, y=repeated_ue_rlc_val_list-0.5, mode='markers', name='Repeated RLC attempts', marker=dict(symbol='triangle-down')), row=1, col=1)
+    
+    # for ue_ndi0_mac_val_list:
+    fig.add_trace(go.Scatter(x=ue_ndi0_mac_ts_list, y=ue_ndi0_mac_val_list-0.3, mode='markers+text', name='Ue mac ndi0', marker=dict(symbol='triangle-up'), text=ue_ndi0_mac_text_list, textposition='top center'), row=1, col=1)
 
-            # process successful MAC retransmissions
-            grouped_retx_schedules = process_successful_retx_schedule_events(all_ul_schedules, successful_retx_schedule)
-            # filter out the successful retx schedules that are actually failed
-            grouped_retx_schedules = filter_successful_retx_schedule(grouped_retx_schedules, grouped_rlc_failed_schedules)
-            grouped_retx_schedules_val_list = np.concatenate((grouped_retx_schedules_val_list,np.array([item['total_hqrounds'] for item in grouped_retx_schedules])))
-            grouped_retx_schedules_text_list = np.concatenate((grouped_retx_schedules_text_list,np.array([item['hqpid'] for item in grouped_retx_schedules])))
-            grouped_retx_schedules_ts_list = np.concatenate((grouped_retx_schedules_ts_list,np.array([(item['timestamp']-begin_ts+prev_end_ts)*1000 for item in grouped_retx_schedules])))
+    fig.update_layout(
+        title='Link Data Plots',
+        xaxis_title='Time [ms]',
+        yaxis_title='Values',
+        legend_title='Legend',
+    )
+    fig.update_xaxes(title_text='Time [ms]', row=1, col=1)
+    fig.update_yaxes(title_text='Values', row=1, col=1)
+    fig.update_xaxes(title_text='Time [ms]', row=2, col=1)
+    fig.update_yaxes(title_text='Values', row=2, col=1)
+    fig.update_xaxes(matches='x')
+    fig.write_html(str(results_folder_addr / 'fast_plot.html'))
 
-        prev_end_ts = (end_ts-begin_ts) + prev_end_ts
-
-    if args.fast:
-        # Create a subplot figure with 2 rows
-        fig = make_subplots(rows=2, cols=1, subplot_titles=('MCS Index', 'Packet arrivals'))
-        fig.add_trace(go.Scatter(x=mcs_ts_list, y=mcs_val_list, mode='lines+markers', name='MCS value', marker=dict(symbol='circle')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=arrivals_ts_list, y=arrivals_size_list, mode='markers', name='Packet arrivals', marker=dict(symbol='square')), row=2, col=1)
-
-        # for failed_ue_rlc attempts:
-        fig.add_trace(go.Scatter(x=repeated_ue_rlc_ts_list, y=repeated_ue_rlc_val_list-0.5, mode='markers', name='Repeated RLC attempts', marker=dict(symbol='triangle-down')), row=1, col=1)
-        
-        # for ue_ndi0_mac_val_list:
-        fig.add_trace(go.Scatter(x=ue_ndi0_mac_ts_list, y=ue_ndi0_mac_val_list-0.3, mode='markers+text', name='Ue mac ndi0', marker=dict(symbol='triangle-up'), text=ue_ndi0_mac_text_list, textposition='top center'), row=1, col=1)
-
-        fig.update_layout(
-            title='Link Data Plots',
-            xaxis_title='Time [ms]',
-            yaxis_title='Values',
-            legend_title='Legend',
-        )
-        fig.update_xaxes(title_text='Time [ms]', row=1, col=1)
-        fig.update_yaxes(title_text='Values', row=1, col=1)
-        fig.update_xaxes(title_text='Time [ms]', row=2, col=1)
-        fig.update_yaxes(title_text='Values', row=2, col=1)
-        fig.update_xaxes(matches='x')
-        fig.write_html(str(results_folder_addr / 'fast_plot.html'))
-    else:
-
-        # Create a subplot figure with 2 rows
-        fig = make_subplots(rows=3, cols=1, subplot_titles=('MCS Index and packet arrivals', 'Link Quality', 'Processed Events'))
-        fig.add_trace(go.Scatter(x=mcs_ts_list, y=mcs_val_list, mode='lines+markers', name='MCS value', marker=dict(symbol='circle')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=arrivals_ts_list, y=arrivals_size_list, mode='markers', name='Packet arrivals', marker=dict(symbol='square')), row=1, col=1)
-
-        # for failed_ul_schedules:
-        fig.add_trace(go.Scatter(x=failed_ul_schedules_ts_list, y=failed_ul_schedules_val_list, mode='markers+text', name='Failed UL schedules', marker=dict(symbol='square'), text=failed_ul_schedules_text_list, textposition='top center'), row=2, col=1)
-        # for failed_ue_mac_attempts:
-        fig.add_trace(go.Scatter(x=failed_ue_mac_ts_list, y=failed_ue_mac_val_list-0.1, mode='markers+text', name='Failed UE mac attempts', marker=dict(symbol='circle'), text=failed_ue_mac_text_list, textposition='top center'), row=2, col=1)
-        # for retx_schedules_val_list:
-        fig.add_trace(go.Scatter(x=retx_schedules_ts_list, y=retx_schedules_val_list-0.2, mode='markers+text', name='Retx schedules', marker=dict(symbol='triangle-up'), text=retx_schedules_text_list, textposition='top center'), row=2, col=1)
-        # for ue_ndi0_mac_val_list:
-        fig.add_trace(go.Scatter(x=ue_ndi0_mac_ts_list, y=ue_ndi0_mac_val_list-0.3, mode='markers+text', name='Ue mac ndi0', marker=dict(symbol='triangle-up'), text=ue_ndi0_mac_text_list, textposition='top center'), row=2, col=1)
-        # for failed_ue_rlc attempts:
-        fig.add_trace(go.Scatter(x=failed_ue_rlc_ts_list, y=failed_ue_rlc_val_list-0.5, mode='markers', name='Failed RLC attempts', marker=dict(symbol='triangle-down')), row=2, col=1)
-        
-        # for grouped_rlc_failed_schedules_val_list:
-        fig.add_trace(go.Scatter(x=grouped_rlc_failed_schedules_ts_list, y=grouped_rlc_failed_schedules_val_list, mode='markers+text', name='Processed failed RLC', marker=dict(symbol='triangle-up'), text=grouped_rlc_failed_schedules_text_list, textposition='top center'), row=3, col=1)
-
-        # for grouped_retx_schedules_val_list:
-        fig.add_trace(go.Scatter(x=grouped_retx_schedules_ts_list, y=grouped_retx_schedules_val_list+0.1, mode='markers+text', name='Processed retx event', marker=dict(symbol='triangle-down'), text=grouped_retx_schedules_text_list, textposition='top center'), row=3, col=1)
-
-        fig.update_layout(
-            title='Link Data Plots',
-            xaxis_title='Time [ms]',
-            yaxis_title='Values',
-            legend_title='Legend',
-        )
-        fig.update_xaxes(title_text='Time [ms]', row=1, col=1)
-        fig.update_yaxes(title_text='Values', row=1, col=1)
-        fig.update_xaxes(title_text='Time [ms]', row=2, col=1)
-        fig.update_yaxes(title_text='Values', row=2, col=1)
-        fig.update_xaxes(title_text='Time [ms]', row=3, col=1)
-        fig.update_yaxes(title_text='Values', row=3, col=1)
-        fig.update_xaxes(matches='x')
-        fig.write_html(str(results_folder_addr / 'combined_plot.html'))
 
 
 def figure_retransmission_probabilities(args):
@@ -403,7 +313,7 @@ def figure_retransmission_probabilities(args):
         json.dump(stats_dict, f, indent=4)
     
 
-def create_training_dataset_stream_based(args):
+def create_training_dataset(args):
     """
     Create a training dataset
     """
@@ -483,16 +393,46 @@ def create_training_dataset_stream_based(args):
         mcs_event_type = None if window_config['type'] == 'block_event' else mcs_event_type
 
         # extract events
-        block_events_arr_0, mcs_events_arr_0 = extract_link_quality_events_stream_based(chan_analyzer, packet_analyzer, sched_analyzer, stream_rnti, begin_ts, end_ts, exp_config, filter_successful_attempts, mcs_event_type, mcs_eval_interval_ms)
+        segment_events, mcs_events = extract_link_quality_events(chan_analyzer, packet_analyzer, sched_analyzer, stream_rnti, begin_ts, end_ts, exp_config, mcs_event_type, mcs_eval_interval_ms)
 
-        # windowing
-        if window_config['type'] == 'block_event':
-            one_db_dataset = stream_based_block_event_window(block_events_arr_0, dataset_config)
+        if filter_successful_attempts:
+            segment_events = [item for item in segment_events if (item['mretx'] > 0 or item['rfailed'])]
+
+        link_events = [ *segment_events, *mcs_events ]
+        link_events = sorted(link_events, key=lambda x: x['timestamp'], reverse=False)
+
+        history_window_size = int(dataset_config['window_config']['size'])
+        dataset_size_max = int(dataset_config['dataset_size_max'])
+
+        if window_config['type'] == 'segment_event':
+            dataset_this_db = []
+            for l in range(len(segment_events) - 2, -1, -1):
+                if l <= history_window_size-1:
+                    break
+                l1 = l + 1
+                hist_sequence = window_history_segment_events(l1, segment_events, history_window_size)
+                if len(hist_sequence) > 0:
+                    dataset_this_db.append(hist_sequence)
+                if len(dataset_this_db) > dataset_size_max:
+                    break
+
         elif window_config['type'] == 'mcs_event':
             if mcs_event_type == 'change':
-                one_db_dataset = stream_based_mcs_change_event_window(block_events_arr_0, mcs_events_arr_0, dataset_config)
+                dataset_this_db = dataset_create_mcs_change(link_events, dataset_config)
             elif mcs_event_type == 'decision':
-                one_db_dataset = stream_based_mcs_decision_event_window(block_events_arr_0, mcs_events_arr_0, dataset_config)
+                dataset_this_db = []
+                for k in range(len(link_events) - 2, -1, -1):
+                    if k <= history_window_size-1:
+                        break
+                    k1 = k + 1
+                    # the label event should be an mcs event
+                    if link_events[k1]['type_event'] == 0:
+                        continue
+                    hist_sequence = window_history_mcs_decision_events(k1, link_events, history_window_size)
+                    if len(hist_sequence) > 0:
+                        dataset_this_db.append(hist_sequence)
+                    if len(dataset_this_db) > dataset_size_max:
+                        break
             else:
                 logger.error("Invalid mcs event type")
                 return
@@ -500,12 +440,12 @@ def create_training_dataset_stream_based(args):
             logger.error("Invalid window type")
 
         # print length of dataset
-        logger.info(f"Number of total entries produced by db {db_id} dataset: {len(one_db_dataset)}")
-        if len(one_db_dataset) > 0:
-            print(one_db_dataset[0])
+        logger.info(f"Number of total entries produced by db {db_id} dataset: {len(dataset_this_db)}")
+        if len(dataset_this_db) > 0:
+            print(dataset_this_db[0])
 
         # append elements of one_db_dataset to dataset
-        dataset.extend(one_db_dataset)
+        dataset.extend(dataset_this_db)
 
         db_id += 1
 
@@ -561,7 +501,7 @@ def create_training_dataset_stream_based(args):
         pickle.dump(test_ds, f)
 
 
-def extract_link_quality_events_stream_based(chan_analyzer, packet_analyzer, sched_analyzer, stream_rnti, begin_ts, end_ts, exp_config, filter_successful_attempts, mcs_event_type, mcs_eval_interval_ms = 100):
+def extract_link_quality_events(chan_analyzer, packet_analyzer, sched_analyzer, stream_rnti, begin_ts, end_ts, exp_config, mcs_event_type, mcs_eval_interval_ms = 100):
 
     slots_duration_ms = exp_config['slots_duration_ms']
     num_slots_per_frame = exp_config['slots_per_frame']
@@ -598,9 +538,9 @@ def extract_link_quality_events_stream_based(chan_analyzer, packet_analyzer, sch
                 'timestamp' : item['timestamp'],
                 'time_since_start':time_since_frame0,
                 'mcs_index' : item['mcs'],
-                'rfailed' : 2, # padding
-                'mretx' : 4, # padding
-                'num_rbs': 106 # padding
+                'rfailed' : RFAILED_PADDING,
+                'mretx' : MRETX_PADDING,
+                'num_rbs': NUM_RBS_PADDING
             })
     elif mcs_event_type == 'decision':
         # needs mcs_eval_interval_ms to be set
@@ -641,9 +581,9 @@ def extract_link_quality_events_stream_based(chan_analyzer, packet_analyzer, sch
                 'timestamp' : mcs_timestamp,
                 'time_since_start':time_since_frame0,
                 'mcs_index' : mcs_value,
-                'rfailed' : 2, # padding
-                'mretx' : 4, # padding
-                'num_rbs': 106 # padding
+                'rfailed' : RFAILED_PADDING,
+                'mretx' : MRETX_PADDING,
+                'num_rbs': NUM_RBS_PADDING
             })
 
     if mcs_event_type is not None:
@@ -667,10 +607,6 @@ def extract_link_quality_events_stream_based(chan_analyzer, packet_analyzer, sch
             mretx = len(rlc_attempt['mac.attempts'])-1
             rfailed = int(not rlc_attempt['acked'])
 
-            if filter_successful_attempts:
-                if not (mretx > 0 or rfailed):
-                    continue
-
             frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
                 timestamp=rlc_attempt['mac.attempts'][0]['phy.in_t'],
                 SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
@@ -687,56 +623,68 @@ def extract_link_quality_events_stream_based(chan_analyzer, packet_analyzer, sch
                     'num_rbs': num_rbs,
                 }
             )
-
+    print("\n", end="")
 
     logger.info(f"This db, number of block events: {len(block_events_arr_0)}, number of MCS events: {len(mcs_events_arr_0)}")
 
     return block_events_arr_0, mcs_events_arr_0
 
-def stream_based_block_event_window(block_events_arr_0, dataset_config):
-    
+
+def window_history_segment_events(l1, segment_events, history_window_size):
+    events_window = []
+    prev_event_ts = 0
+    if l1 - history_window_size < 0 or l1 + 1 > len(segment_events):
+        return []
+    for pos, event in enumerate(segment_events[l1-history_window_size:l1+1]):
+        events_window.append(
+            {
+                'idx_event' : pos, 
+                'time_since_last_event' : (event['timestamp'] - prev_event_ts)*1000 if pos > 0 else 0,
+                **event
+            }
+        )
+        prev_event_ts = event['timestamp']
+    return events_window
+
+def window_history_mcs_decision_events(k1, link_events, history_window_size, middle_timestamp = None):
+    events_window = []
+    prev_event_ts = 0
+    if ((k1 - history_window_size) < 0) or ((k1 + 1) > len(link_events)):
+        return []
+    pos = 0
+    for event in link_events[k1-history_window_size:k1+1]:
+        if middle_timestamp is not None:
+            if event['timestamp'] > middle_timestamp:
+                break
+        events_window.append(
+            {
+                'idx_event' : pos, 
+                'time_since_last_event' : (event['timestamp'] - prev_event_ts)*1000 if pos > 0 else 0,
+                **event
+            }
+        )
+        pos += 1
+        prev_event_ts = event['timestamp']
+
+    if middle_timestamp is not None:
+        # add the mcs decision event
+        event = link_events[k1]
+        events_window.append(
+            {
+                'idx_event' : pos, 
+                'time_since_last_event' : (event['timestamp'] - prev_event_ts)*1000 if pos > 0 else 0,
+                **event
+            }
+        )
+    return events_window
+
+
+def dataset_create_mcs_change(sorted_link_events, dataset_config):
+
     # select the source configuration
     window_config = dataset_config['window_config']
     history_window_size = window_config['size']
     dataset_size_max = dataset_config['dataset_size_max']
-
-    link_events = block_events_arr_0
-    sorted_link_events = sorted(link_events, key=lambda x: x['timestamp'], reverse=False)
-
-    dataset = []
-    for idx,_ in enumerate(sorted_link_events):
-        if idx+history_window_size >= len(sorted_link_events):
-            break
-
-        events_window = []
-        prev_event_ts = 0
-        for pos, event in enumerate(sorted_link_events[idx:idx+history_window_size]):
-            events_window.append(
-                {
-                    'idx_event' : pos, 
-                    'time_since_last_event' : (event['timestamp'] - prev_event_ts)*1000 if pos > 0 else 0,
-                    **event
-                }
-            )
-            prev_event_ts = event['timestamp'] 
-    
-        #print(events)
-        dataset.append(events_window)
-        if len(dataset) > dataset_size_max:
-            break
-
-    return dataset
-
-
-def stream_based_mcs_change_event_window(block_events_arr_0, mcs_change_events_arr_0, dataset_config):
-
-    # select the source configuration
-    window_config = dataset_config['window_config']
-    history_window_size = window_config['size']
-    dataset_size_max = dataset_config['dataset_size_max']
-
-    link_events = [ *block_events_arr_0, *mcs_change_events_arr_0 ]
-    sorted_link_events = sorted(link_events, key=lambda x: x['timestamp'], reverse=False)
 
     dataset = []
     for idx,_ in enumerate(sorted_link_events):
@@ -778,89 +726,6 @@ def stream_based_mcs_change_event_window(block_events_arr_0, mcs_change_events_a
         #print(events)
         dataset.append(events_window)
         if len(dataset) > dataset_size_max:
-            break
-
-    return dataset
-
-
-def stream_based_mcs_decision_event_window(block_events_arr_0, mcs_decision_events_arr_0, dataset_config):
-
-    # select the source configuration
-    window_config = dataset_config['window_config']
-    history_window_size = window_config['size']
-    dataset_size_max = dataset_config['dataset_size_max']
-
-    link_events = [ *block_events_arr_0, *mcs_decision_events_arr_0 ]
-    sorted_link_events = sorted(link_events, key=lambda x: x['timestamp'], reverse=False)
-
-    dataset = []
-    # iterate backwards through sorted_link_events
-    for idx in range(len(sorted_link_events)-1, -1, -1):
-        # we look for mcs decision events first
-        if sorted_link_events[idx]['type_event'] == 0:
-            continue
-        
-        # found one!
-        label_mcs_event = sorted_link_events[idx]
-        
-        # check there is enough history to create the window
-        if idx-history_window_size+1 < 0:
-            break
-
-        # let's go back history_window_size-1 events, and create the window
-        events_window = []
-        prev_event_ts = 0
-        for pos, event in enumerate(sorted_link_events[idx-history_window_size+1:idx]):
-            events_window.append(
-                {
-                    'idx_event' : pos,
-                    'time_since_last_event' : (event['timestamp'] - prev_event_ts)*1000 if pos > 0 else 0,
-                    **event
-                }
-            )
-            prev_event_ts = event['timestamp']
-        # finally append the label_mcs_event
-        events_window.append(
-            {
-                'idx_event' : pos+1, 
-                'time_since_last_event' : (label_mcs_event['timestamp'] - prev_event_ts)*1000,
-                **label_mcs_event
-            }
-        )
-
-        #print(events)
-        dataset.append(events_window)
-        if len(dataset) > dataset_size_max:
-            break
-
-    return dataset
-
-
-def stream_based_time_window(block_events_arr_0, mcs_change_events_arr_0, dataset_config):
-
-    # select the source configuration
-    window_config = dataset_config['window_config']
-    history_window_size = window_config['size']
-    dataset_size_max = dataset_config['dataset_size_max']
-
-    link_events = [ *block_events_arr_0, *mcs_change_events_arr_0 ]
-    sorted_link_events = sorted(link_events, key=lambda x: x['timestamp'], reverse=False)
-
-    stop = False
-    dataset = []
-    for first_event_idx, first_event in enumerate(sorted_link_events):
-        events_window = []
-        pos = 0
-        for next_event_idx, next_event in enumerate(sorted_link_events[first_event_idx:]):
-            if (next_event['timestamp']-first_event['timestamp']) > history_window_size:
-                break
-            events_window.append({ 'idx_event' : pos, **next_event })
-            pos += 1
-            if next_event_idx+first_event_idx >= len(sorted_link_events)-1:
-                stop = True
-                break
-        dataset.append(events_window)
-        if (len(dataset) > dataset_size_max) or stop:
             break
 
     return dataset

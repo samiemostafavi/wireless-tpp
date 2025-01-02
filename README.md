@@ -207,7 +207,8 @@ Packet delay prediction algorithm:
 
 Validate by expected values
 ```
-python main.py -t e2e -u plot_data -s data/s63_results -p sampling -c config/e2e_config.json
+python main.py -t e2e -u plot_data -s data/s63_results -n test1 -c config/e2e_config.json
+python main.py -t link_quality -u create_modular_dataset -s data/s63_results -c config/dataset_config.json -g s63_e2e -n test1
 python main.py -t e2e -u generate_predictions -s data/s63_results -p sampling -c config/e2e_config.json
 ```
 
