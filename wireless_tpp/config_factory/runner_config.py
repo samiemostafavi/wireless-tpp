@@ -37,13 +37,21 @@ class RunnerConfig(Config):
 
         logger.info(f'Save the config to {save_dir}')
 
+    def save_config(self):
+        # save the complete config
+        save_dir = self.base_config.specs['output_config_dir']
+        self.save_to_yaml_file(save_dir)
+
+        logger.info(f'Save the config to {save_dir}')
+
+
     def get_yaml_config(self):
         """Return the config in dict (yaml compatible) format.
 
         Returns:
             dict: config of the runner config in dict format.
         """
-        return {'data_config': self.data_config.get_yaml_config(),
+        return {'data_config': self.data_config.get_yaml_config() if self.data_config is not None else None,
                 'base_config': self.base_config.get_yaml_config(),
                 'model_config': self.model_config.get_yaml_config(),
                 'trainer_config': self.trainer_config.get_yaml_config(),
@@ -65,19 +73,19 @@ class RunnerConfig(Config):
             yaml_exp_config = yaml_config[exp_id]
             dataset_id = yaml_exp_config.get('base_config').get('dataset_id')
             if dataset_id is None:
-                dataset_id = DefaultRunnerConfig.DEFAULT_DATASET_ID
-            try:
+                data_config = None
+            else:
                 yaml_data_config = yaml_config['data'][dataset_id]
-            except KeyError:
-                raise RuntimeError('dataset_id={} is not found in config.'.format(dataset_id))
-
-            data_config = DataConfig.parse_from_yaml_config(yaml_data_config)
+                data_config = DataConfig.parse_from_yaml_config(yaml_data_config)
             # add exp id to base config
             yaml_exp_config.get('base_config').update(exp_id=exp_id)
-
         else:
             yaml_exp_config = yaml_config
-            data_config = DataConfig.parse_from_yaml_config(yaml_exp_config.get('data_config'))
+            data_config = yaml_exp_config.get('data_config',None)
+            if data_config is not None:
+                data_config = DataConfig.parse_from_yaml_config(data_config)
+            else:
+                data_config = None
 
         base_config = BaseConfig.parse_from_yaml_config(yaml_exp_config.get('base_config'))
         model_config = ModelConfig.parse_from_yaml_config(yaml_exp_config.get('model_config'))
@@ -127,21 +135,21 @@ class RunnerConfig(Config):
         self.model_config.is_training = is_training
         self.model_config.gpu = self.trainer_config.gpu
 
-        # update the dataset config => model config
-        self.model_config.num_event_types_pad = self.data_config.data_specs.num_event_types_pad
-        self.model_config.num_event_types = self.data_config.data_specs.num_event_types
-        self.model_config.pad_token_id = self.data_config.data_specs.pad_token_id
-        self.model_config.max_len = self.data_config.data_specs.max_len
+        if self.data_config is not None:
+            # update the dataset config => model config
+            self.model_config.num_event_types_pad = self.data_config.data_specs.num_event_types_pad
+            self.model_config.num_event_types = self.data_config.data_specs.num_event_types
+            self.model_config.pad_token_id = self.data_config.data_specs.pad_token_id
+            self.model_config.max_len = self.data_config.data_specs.max_len
+        else:
+            self.model_config.num_event_types_pad = None
+            self.model_config.num_event_types = None
+            self.model_config.pad_token_id = None
+            self.model_config.max_len = None
 
         # update base config => model config
         model_id = self.base_config.model_id
         self.model_config.model_id = model_id
-
-        if self.base_config.model_id == 'ODETPP' and self.base_config.backend == Backend.TF:
-            py_assert(self.data_config.data_specs.padding_strategy == 'max_length',
-                      ValueError,
-                      'For ODETPP in TensorFlow, we must pad all sequence to '
-                      'the same length (max len of the sequences)!')
 
         run = current_stage
         use_torch = self.base_config.backend == Backend.Torch

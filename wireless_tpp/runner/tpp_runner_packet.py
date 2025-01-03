@@ -23,7 +23,7 @@ class TPPRunnerPacketArrival():
         """
 
         self.eps = 1e-9
-        
+
         self.runner_config = runner_config
         # re-assign the model_dir
         if unique_model_dir:
@@ -42,18 +42,18 @@ class TPPRunnerPacketArrival():
             **kwargs
         )
 
-        # Needed for Intensity Free model
-        mean_dtime, std_dtime, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
-            self._data_loader.train_loader().dataset.get_dt_stats()
-        )
-        runner_config.model_config.set("mean_dtime", mean_dtime)
-        runner_config.model_config.set("std_dtime", std_dtime)
-        runner_config.model_config.set("mean_log_dtime", np.log(mean_dtime+self.eps))
-        runner_config.model_config.set("std_log_dtime", np.log(std_dtime+self.eps))
-        runner_config.model_config.set("mean_len", mean_event_type)
-        runner_config.model_config.set("std_len", std_event_type)
-        runner_config.model_config.set("mean_log_len", np.log(mean_event_type+self.eps))
-        runner_config.model_config.set("std_log_len", np.log(std_event_type+self.eps))
+        # needed for model training
+        if data_config is not None:
+            mean_dtime, std_dtime, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
+                self._data_loader.train_loader().dataset.get_dt_stats()
+            )
+            runner_config.model_config.model_specs["mean_dtime"] = float(mean_dtime)
+            runner_config.model_config.model_specs["std_dtime"] = float(std_dtime)
+            runner_config.model_config.model_specs["mean_len"] = float(mean_event_type)
+            runner_config.model_config.model_specs["std_len"] = float(std_event_type)
+
+            # save again to save the updated config
+            self.runner_config.save_config()
 
         self.timer = Timer()
 
@@ -225,7 +225,9 @@ class TPPRunnerPacketArrival():
             EasyTPP.BaseModel, dict: the results of the process.
         """
         source_data = kwargs.get('source_data', None)
+        
         if source_data is not None:
+            source_data_specs = kwargs.get('data_specs')
             data_config = self.runner_config.data_config
             backend = self.runner_config.base_config.backend
             # {'seed': 2019, 'gpu': -1, 'batch_size': 1, 'max_epoch': 800, 'shuffle': False, 'optimizer': 'adam', 'learning_rate': 0.0001, 'valid_freq': 10, 'use_tfb': False, 'metrics': ['acc', 'rmse']}
@@ -237,6 +239,7 @@ class TPPRunnerPacketArrival():
                 data_config=data_config,
                 backend=backend,
                 source_data=source_data,
+                source_data_specs=source_data_specs,
                 **kwargs_train
             )
 

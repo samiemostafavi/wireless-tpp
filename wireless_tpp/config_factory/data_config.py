@@ -6,10 +6,6 @@ class DataSpecConfig(Config):
         """Initialize the Config class.
         """
         self.num_event_types = kwargs.get('num_event_types')
-        self.num_event_types_no_mcs = kwargs.get('num_event_types_no_mcs', self.num_event_types)
-        self.includes_mcs = kwargs.get('includes_mcs', False)
-        self.mcs_events = kwargs.get('mcs_events', False)
-        self.min_mcs = kwargs.get('min_mcs', 0)
         self.pad_token_id = kwargs.get('pad_token_id')
         self.padding_side = kwargs.get('padding_side')
         self.truncation_side = kwargs.get('truncation_side')
@@ -40,10 +36,6 @@ class DataSpecConfig(Config):
         """
         return {
             'num_event_types': self.num_event_types,
-            'num_event_types_no_mcs' : self.num_event_types_no_mcs,
-            'min_mcs': self.min_mcs,
-            'includes_mcs': self.includes_mcs,
-            'mcs_events': self.mcs_events,
             'pad_token_id': self.pad_token_id,
             'padding_side': self.padding_side,
             'truncation_side': self.truncation_side,
@@ -72,10 +64,6 @@ class DataSpecConfig(Config):
         """
         return DataSpecConfig(num_event_types_pad=self.num_event_types_pad,
                               num_event_types=self.num_event_types,
-                              includes_mcs=self.includes_mcs,
-                              min_mcs=self.min_mcs,
-                              mcs_events=self.mcs_events,
-                              num_event_types_no_mcs=self.num_event_types_no_mcs,
                               event_pad_index=self.pad_token_id,
                               padding_side=self.padding_side,
                               truncation_side=self.truncation_side,
@@ -98,7 +86,10 @@ class DataConfig(Config):
         self.valid_dir = valid_dir
         self.test_dir = test_dir
         self.data_specs = specs or DataSpecConfig()
-        self.data_format = train_dir.split('.')[-1]
+        if train_dir is not None:
+            self.data_format = train_dir.split('.')[-1]
+        else:
+            self.data_format = None
 
     def get_yaml_config(self):
         """Return the config in dict (yaml compatible) format.
@@ -125,9 +116,9 @@ class DataConfig(Config):
             EasyTPP.DataConfig: Config class for data.
         """
         return DataConfig(
-            train_dir=yaml_config.get('train_dir'),
-            valid_dir=yaml_config.get('valid_dir'),
-            test_dir=yaml_config.get('test_dir'),
+            train_dir=yaml_config.get('train_dir', None),
+            valid_dir=yaml_config.get('valid_dir', None),
+            test_dir=yaml_config.get('test_dir', None),
             specs=DataSpecConfig.parse_from_yaml_config(yaml_config.get('data_specs'))
         )
 

@@ -64,75 +64,6 @@ class TrainerConfig(Config):
                              metrics=self.metrics
                              )
 
-class ThinningConfig(Config):
-    def __init__(self, **kwargs):
-        """Initialize the Config class.
-        """
-        self.num_seq = kwargs.get('num_seq', 10)
-        self.num_sample = kwargs.get('num_sample', 1)
-        self.num_exp = kwargs.get('num_exp', 500)
-        self.look_ahead_time = kwargs.get('look_ahead_time', 10)
-        self.patience_counter = kwargs.get('patience_counter', 5)
-        self.over_sample_rate = kwargs.get('over_sample_rate', 5)
-        self.num_samples_boundary = kwargs.get('num_samples_boundary', 5)
-        self.dtime_max = kwargs.get('dtime_max', 5)
-        self.num_sample_mean = kwargs.get('num_sample_mean', 5)
-        self.sample_dtime_max = kwargs.get('sample_dtime_max', 200)
-        self.sample_dtime_min = kwargs.get('sample_dtime_min', 0)
-        self.sample_event_type_max = kwargs.get('sample_event_type_max', 500)
-        self.sample_event_type_min = kwargs.get('sample_event_type_min', 0)
-        # we pad the sequence at the front only in multi-step generation
-        self.num_step_gen = kwargs.get('num_step_gen', 1)
-
-    def get_yaml_config(self):
-        """Return the config in dict (yaml compatible) format.
-
-        Returns:
-            dict: config of the thinning specs in dict format.
-        """
-        return {'num_seq': self.num_seq,
-                'num_sample': self.num_sample,
-                'num_exp': self.num_exp,
-                'look_ahead_time': self.look_ahead_time,
-                'patience_counter': self.patience_counter,
-                'over_sample_rate': self.over_sample_rate,
-                'num_samples_boundary': self.num_samples_boundary,
-                'dtime_max': self.dtime_max,
-                'num_sample_mean': self.num_sample_mean,
-                'sample_dtime_max': self.sample_dtime_max,
-                'sample_dtime_min': self.sample_dtime_min,
-                'sample_event_type_max': self.sample_event_type_max,
-                'sample_event_type_min': self.sample_event_type_min,
-                'num_step_gen': self.num_step_gen}
-
-    @staticmethod
-    def parse_from_yaml_config(yaml_config):
-        """Parse from the yaml to generate the config object.
-
-        Args:
-            yaml_config (dict): configs from yaml file.
-
-        Returns:
-            EasyTPP.ThinningConfig: Config class for thinning algorithms.
-        """
-        return ThinningConfig(**yaml_config) if yaml_config is not None else None
-
-    def copy(self):
-        """Copy the config.
-
-        Returns:
-            EasyTPP.ThinningConfig: a copy of current config.
-        """
-        return ThinningConfig(num_seq=self.num_seq,
-                              num_sample=self.num_sample,
-                              num_exp=self.num_exp,
-                              look_ahead_time=self.look_ahead_time,
-                              patience_counter=self.patience_counter,
-                              over_sample_rate=self.over_sample_rate,
-                              num_samples_boundary=self.num_samples_boundary,
-                              dtime_max=self.dtime_max,
-                              num_step_gen=self.num_step_gen)
-
 class NoiseRegularizationConfig(Config):
     def __init__(self, **kwargs):
         """Initialize the Config class.
@@ -270,7 +201,6 @@ class ModelConfig(Config):
         self.loss_integral_num_sample_per_step = kwargs.get('loss_integral_num_sample_per_step', 20)  # mc_num_sample_per_step
         self.dropout_rate = kwargs.get('dropout_rate', 0.0)
         self.use_ln = kwargs.get('use_ln', False)
-        self.thinning = ThinningConfig.parse_from_yaml_config(kwargs.get('thinning'))
         self.is_training = kwargs.get('training', False)
         self.num_event_types_pad = kwargs.get('num_event_types_pad', None)
         self.num_event_types = kwargs.get('num_event_types', None)
@@ -297,7 +227,6 @@ class ModelConfig(Config):
                 'use_ln': self.use_ln,
                 # for some models / cases we may not need to pass thinning config
                 # e.g., for intensity-free model
-                'thinning': None if self.thinning is None else self.thinning.get_yaml_config(),
                 'num_event_types_pad': self.num_event_types_pad,
                 'num_event_types': self.num_event_types,
                 'event_pad_index': self.pad_token_id,

@@ -123,19 +123,18 @@ First modify the yaml file `config/training_config.yaml` with the datasets infor
 
 Train a model (packet arrival)
 ```
-python main.py -t packet_arrival -u train_model -f -c config/training_config.yaml -i IF_train_s63_packetarrival_0
+python main.py -t packet_arrival -u train_model -f -c config/training_config.yaml -i Arrival_s63_0
 ```
 
 Train a model (link quality)
 ```
-python main.py -t link_quality -u train_model -f -c config/training_config.yaml -i THP_train_s63_linkquality_0
 python main.py -t link_quality -u train_model -f -c config/training_config.yaml -i MCS_s63_0
 python main.py -t link_quality -u train_model -f -c config/training_config.yaml -i RETX_s63_0
 ```
 
 Train a model (scheduling)
 ```
-python main.py -t scheduling -u train_model -f -c config/training_config.yaml -i IF_train_s63_scheduling_0
+python main.py -t scheduling -u train_model -f -c config/training_config.yaml -i Scheduling_s63_0
 ```
 
 ### Step 4. Validate the models
@@ -208,8 +207,8 @@ Packet delay prediction algorithm:
 Validate by expected values
 ```
 python main.py -t e2e -u plot_data -s data/s63_results -n test1 -c config/e2e_config.json
-python main.py -t link_quality -u create_modular_dataset -s data/s63_results -c config/dataset_config.json -g s63_e2e -n test1
-python main.py -t e2e -u generate_predictions -s data/s63_results -p sampling -c config/e2e_config.json
+python main.py -t e2e -u create_training_dataset -s data/s63_results -c config/dataset_config.json -g s63_e2e -n test1
+python main.py -t e2e -u generate_predictions -s data/s63_results -c config/prediction_config.json -g s63_e2e
 ```
 
  

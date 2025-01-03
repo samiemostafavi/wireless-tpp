@@ -44,20 +44,21 @@ class TPPRunnerLinkQuality():
         )
 
         # just for the sake of reporting in logs
-        mean_dtime, std_dtime, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
-            self._data_loader.train_loader().dataset.get_stats(inp_type='time_delta_seqs', mcs_or_segment=False)
-        )
-        self._data_loader.train_loader().dataset.get_stats(inp_type='num_rbs_seqs', mcs_or_segment=False)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', mcs_or_segment=False)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', mcs_or_segment=False)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', mcs_or_segment=False)
+        if data_config is not None:
+            mean_dtime, std_dtime, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
+                self._data_loader.train_loader().dataset.get_stats(inp_type='time_delta_seqs', mcs_or_segment=False)
+            )
+            self._data_loader.train_loader().dataset.get_stats(inp_type='num_rbs_seqs', mcs_or_segment=False)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', mcs_or_segment=False)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', mcs_or_segment=False)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', mcs_or_segment=False)
 
-        if not (min_eventtype == max_eventtype and max_eventtype == 0):
-            self._data_loader.train_loader().dataset.get_stats(inp_type='time_delta_seqs', mcs_or_segment=True)
-            self._data_loader.train_loader().dataset.get_stats(inp_type='num_rbs_seqs', mcs_or_segment=True)
-            self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', mcs_or_segment=True)
-            self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', mcs_or_segment=True)
-            self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', mcs_or_segment=True)
+            if not (min_eventtype == max_eventtype and max_eventtype == 0):
+                self._data_loader.train_loader().dataset.get_stats(inp_type='time_delta_seqs', mcs_or_segment=True)
+                self._data_loader.train_loader().dataset.get_stats(inp_type='num_rbs_seqs', mcs_or_segment=True)
+                self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', mcs_or_segment=True)
+                self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', mcs_or_segment=True)
+                self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', mcs_or_segment=True)
 
         self.timer = Timer()
 
@@ -241,6 +242,7 @@ class TPPRunnerLinkQuality():
         """
         source_data = kwargs.get('source_data', None)
         if source_data is not None:
+            source_data_specs = kwargs.get('data_specs')
             data_config = self.runner_config.data_config
             backend = self.runner_config.base_config.backend
             # {'seed': 2019, 'gpu': -1, 'batch_size': 1, 'max_epoch': 800, 'shuffle': False, 'optimizer': 'adam', 'learning_rate': 0.0001, 'valid_freq': 10, 'use_tfb': False, 'metrics': ['acc', 'rmse']}
@@ -252,6 +254,7 @@ class TPPRunnerLinkQuality():
                 data_config=data_config,
                 backend=backend,
                 source_data=source_data,
+                source_data_specs=source_data_specs,
                 **kwargs_train
             )
 
