@@ -43,35 +43,31 @@ class TPPRunnerScheduling():
         )
 
         # needed for transformation of the data
-        mean_dtime, std_dtime, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
-            self._data_loader.train_loader().dataset.get_stats(inp_type='time_delta_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        )
-        runner_config.model_config.set("mean_dtime", mean_dtime)
-        runner_config.model_config.set("std_dtime", std_dtime)
-        runner_config.model_config.set("mean_log_dtime", np.log(mean_dtime+self.eps))
-        runner_config.model_config.set("std_log_dtime", np.log(std_dtime+self.eps))
-        runner_config.model_config.set("mean_event_type", mean_event_type)
-        runner_config.model_config.set("std_event_type", std_event_type)
-        runner_config.model_config.set("mean_log_event_type", np.log(mean_event_type+self.eps))
-        runner_config.model_config.set("std_log_event_type", np.log(std_event_type+self.eps))
+        if data_config is not None:
+            mean_dtime, std_dtime, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
+                self._data_loader.train_loader().dataset.get_stats(inp_type='time_delta_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+            )
+            runner_config.model_config.model_specs["mean_dtime"] = float(mean_dtime)
+            runner_config.model_config.model_specs["std_dtime"] = float(std_dtime)
+            
+            mean_len, std_len, mean_event_type, std_event_type, min_len, max_len, min_eventtype, max_eventtype = (
+                self._data_loader.train_loader().dataset.get_stats(inp_type='len_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+            )
+            runner_config.model_config.model_specs["mean_len"] = float(mean_len)
+            runner_config.model_config.model_specs["std_len"] = float(std_len)
 
-        mean_len, std_len, mean_event_type, std_event_type, min_len, max_len, min_eventtype, max_eventtype = (
+            # just for the sake of reporting in logs
             self._data_loader.train_loader().dataset.get_stats(inp_type='len_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        )
-        runner_config.model_config.set("mean_len", mean_len)
-        runner_config.model_config.set("std_len", std_len)
-        runner_config.model_config.set("mean_log_len", np.log(mean_len+self.eps))
-        runner_config.model_config.set("std_log_len", np.log(std_len+self.eps))
+            self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='len_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+            self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
 
-        # just for the sake of reporting in logs
-        self._data_loader.train_loader().dataset.get_stats(inp_type='len_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='len_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='mcs_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='mretx_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
-        self._data_loader.train_loader().dataset.get_stats(inp_type='rfailed_seqs', packet_or_segment=True, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
+            # save again to save the updated config
+            self.runner_config.save_config()
 
         self.timer = Timer()
 
@@ -245,6 +241,7 @@ class TPPRunnerScheduling():
         """
         source_data = kwargs.get('source_data', None)
         if source_data is not None:
+            source_data_specs = kwargs.get('data_specs')
             data_config = self.runner_config.data_config
             backend = self.runner_config.base_config.backend
             # {'seed': 2019, 'gpu': -1, 'batch_size': 1, 'max_epoch': 800, 'shuffle': False, 'optimizer': 'adam', 'learning_rate': 0.0001, 'valid_freq': 10, 'use_tfb': False, 'metrics': ['acc', 'rmse']}
@@ -256,6 +253,7 @@ class TPPRunnerScheduling():
                 data_config=data_config,
                 backend=backend,
                 source_data=source_data,
+                source_data_specs=source_data_specs,
                 **kwargs_train
             )
 

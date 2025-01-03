@@ -645,8 +645,9 @@ def create_training_dataset(args):
         this_db_scheduling_events = extract_scheduling_events(packet_analyzer, sched_analyzer, begin_ts, end_ts, exp_config)
 
         # find the dim_process
-        this_db_max_segment = max(event['segment'] for event in this_db_scheduling_events)
+        this_db_max_segment = max([event['segment']+1 for event in this_db_scheduling_events])
         dim_process = max(dim_process, this_db_max_segment+1)
+        logger.info(f"Database {db_id}, maximum segment number: {this_db_max_segment}")
 
         logger.info(f"Creating training dataset for db {db_id}")
         dataset_size_max = dataset_config['dataset_size_max']
@@ -707,7 +708,7 @@ def create_training_dataset(args):
 
     # dev
     dev_ds = {
-        'dim_process' : dim_process,
+        'dim_process' : int(dim_process),
         'dev' : dataset[train_num:train_num+dev_num],
     }
     # Save the dictionary to a pickle file
@@ -716,7 +717,7 @@ def create_training_dataset(args):
 
     # test
     test_ds = {
-        'dim_process' : dim_process,
+        'dim_process' : int(dim_process),
         'test' : dataset[train_num+dev_num:-1],
     }
     # Save the dictionary to a pickle file

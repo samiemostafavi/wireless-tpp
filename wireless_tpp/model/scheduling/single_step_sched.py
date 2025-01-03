@@ -22,10 +22,10 @@ class SingleStepScheduling(TorchBaseModel):
         """
         super(SingleStepScheduling, self).__init__(model_config)
 
-        self.mean_dtime = model_config.get("mean_dtime", 0.0)
-        self.std_dtime = model_config.get("std_dtime", 1.0)
-        self.mean_len = model_config.get("mean_len", 0.0)
-        self.std_len = model_config.get("std_len", 1.0)
+        self.mean_dtime = model_config.model_specs.get("mean_dtime", 0.0)
+        self.std_dtime = model_config.model_specs.get("std_dtime", 1.0)
+        self.mean_len = model_config.model_specs.get("mean_len", 0.0)
+        self.std_len = model_config.model_specs.get("std_len", 1.0)
         self.len_hist_transform = D.AffineTransform(loc=self.mean_len, scale=self.std_len)
 
         # Noise regularization, only Gaussian noise is supported
@@ -101,6 +101,8 @@ class SingleStepScheduling(TorchBaseModel):
         # rlc failed embedding
         self.num_rfailed_types = 3  # failed attempt indices: 0 and 1 (2 types), and padding token
         self.rfailed_pad_id = 2
+
+        self.num_event_types_pad = 7 # should be 4
 
         # Embedding layers defenitions
         # temporal encoding

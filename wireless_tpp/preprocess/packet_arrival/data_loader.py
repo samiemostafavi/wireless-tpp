@@ -2,6 +2,7 @@ from wireless_tpp.preprocess import BaseTPPDataLoader
 from wireless_tpp.utils import load_pickle, py_assert
 from wireless_tpp.preprocess import get_data_loader
 from wireless_tpp.preprocess import EventTokenizer
+from wireless_tpp.config_factory import DataSpecConfig
 
 from .dataset import TPPDatasetPacketArrival
 
@@ -13,10 +14,15 @@ class TPPDataLoaderPacketArrival(BaseTPPDataLoader):
             data_config (EasyTPP.DataConfig): data config.
             backend (str): backend engine, e.g., tensorflow or torch.
         """
-        self.data_config = data_config
-        self.num_event_types = data_config.data_specs.num_event_types
+        if data_config is not None:
+            self.data_config = data_config
+            self.num_event_types = data_config.data_specs.num_event_types
+        else:
+            self.data_config = None
+            self.num_event_types = None
         self.backend = backend
         self.source_data = kwargs.get('source_data', None)
+        self.source_data_specs = kwargs.get('source_data_specs', None)
         self.kwargs = kwargs
 
     def build_input_from_pkl(self, source_dir: str, split: str):
@@ -85,7 +91,10 @@ class TPPDataLoaderPacketArrival(BaseTPPDataLoader):
                 data = self.build_input_from_json(data_dir, split)
 
         dataset = TPPDatasetPacketArrival(data)
-        tokenizer = EventTokenizer(self.data_config.data_specs)
+        if self.data_config is not None:
+            tokenizer = EventTokenizer(self.data_config.data_specs)
+        else:
+            tokenizer = EventTokenizer(DataSpecConfig(**self.source_data_specs))
         loader = get_data_loader(dataset,
                                  self.backend,
                                  tokenizer,

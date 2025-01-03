@@ -97,6 +97,8 @@ class SingleStepRETX(TorchBaseModel):
         self.num_rfailed_types = 3  # failed attempt indices: 0 and 1 (2 types), and padding token
         self.rfailed_pad_id = 2
 
+        #self.num_event_types_pad = ?
+
         # Embedding layers defenitions
         # temporal encoding
         self.layer_temporal_encoding = TimePositionalEncoding(

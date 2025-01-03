@@ -22,7 +22,6 @@ class TorchBaseModel(nn.Module):
 
         self.is_prior = model_config.model_specs.get('prior', False)
         
-        self.gen_config = model_config.thinning
         self.event_sampler = None
         self.device = set_device(model_config.gpu)
         self.use_mc_samples = model_config.use_mc_samples

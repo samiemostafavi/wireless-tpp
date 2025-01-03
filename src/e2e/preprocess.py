@@ -396,10 +396,10 @@ def create_training_dataset(args):
             label_sequence = [item for item in scheduling_events[m+1:mL+1]]
             dataset_this_db.append({
                 'n' : n,
-                'arrival' : arrival_history_sequence,
-                'scheduling' : sched_history_sequence,
-                'mcs' : mcs_history_sequence,
-                'retx' : retx_history_sequence,
+                'arrival' : arrival_history_sequence[:-1], # we don't want the label event
+                'scheduling' : sched_history_sequence[:-1],
+                'mcs' : mcs_history_sequence[:-1],
+                'retx' : retx_history_sequence[:-1],
                 'label' : label_sequence
             })        
         print("\n", end="")
