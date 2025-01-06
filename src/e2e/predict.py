@@ -237,6 +237,8 @@ def generate_predictions(args):
         unique_model_dir=False
     )
 
+    num_future_packet_predictions = 2
+
     # run e2e delay prediction
     # for each entry in dataset, we run one prediction
     for entry in dataset:
@@ -247,7 +249,7 @@ def generate_predictions(args):
             retx_runner = retx_runner,
             sched_runner = sched_runner, 
             exp_config = exp_config,
-            num_packets = 2,
+            num_future_packet_predictions = num_future_packet_predictions,
             mcs_eval_interval_ms = 100,
             filter_successful_attempts_for_mcs = True,
             mcs_dimension_limit = 10,
@@ -255,7 +257,7 @@ def generate_predictions(args):
             exclude_link_quality = False,
             max_num_segments = 5
         )
-        print(entry['label'])
+        print(entry['label'][:num_future_packet_predictions])
         print('-')
         print(predicted_packet_transmissions[0][0])
         print('-')

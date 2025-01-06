@@ -550,13 +550,14 @@ def append_mcs_predictions_to_history(mcs_predictions, upd_mcs_history, upd_sche
     return upd2_sched_history, upd2_retx_history, upd2_mcs_history, upd_mcs_index
 
 
-def append_arrival_predictions_to_history(upd_arrival_history, upd2_sched_history, upd2_retx_history, upd2_mcs_history, exp_config):
+def append_arrival_predictions_to_history(upd_arrival_history, upd2_sched_history, upd2_retx_history, upd2_mcs_history, upd_mcs_index, exp_config):
     # first update sched history sequence, then repeat the other two histories as they won't change
     # inputs: [upd_sched_history_size, upd_mcs_size, sched_sequence_length]
     # upd_arrival_history: [upd_arrival_history_size, arrival_sequence_length]
     # upd2_sched_history: [upd2_sched_history_size, upd_mcs_size, sched_sequence_length]
     # upd2_retx_history: [upd2_retx_history_size, upd_mcs_size, retx_sequence_length]
     # upd2_mcs_history: [upd2_mcs_history_size, upd_mcs_size, mcs_sequence_length]
+    # upd_mcs_index: [upd_mcs_size]
     # outputs:
     # upd3_sched_history: [upd_arrival_history_size*upd_sched_history_size, upd_mcs_size, sched_sequence_length]
     # upd3_retx_history: [upd_arrival_history_size*upd_retx_history_size, upd_mcs_size, retx_sequence_length]
@@ -589,7 +590,7 @@ def append_arrival_predictions_to_history(upd_arrival_history, upd2_sched_histor
                         'type_event': 0, # arrival event in scheduling history has type zero
                         'slot' : pred_segment_slot, # will be fixed later
                         'len' : int(pred_arrival_event['type_event']),
-                        'mcs_index' : 16, #pred_arrival_event['mcs_index'], FIXME
+                        'mcs_index' : int(upd_mcs_index[idz]),
                         'mretx' : MRETX_PADDING,
                         'rfailed' : RFAILED_PADDING,
                         'num_rbs' : NUM_RBS_PADDING,
@@ -781,19 +782,14 @@ def next_packet_and_mcs_prediction(
     # input history has the dim: [upd_sched_history_size, upd_mcs_size, sched_sequence_length]
     # output dims upd3_sched_history: [upd_arrival_history_size*upd_sched_history_size, upd_mcs_size, sched_sequence_length]
     upd3_sched_history, upd3_retx_history, upd3_mcs_history = append_arrival_predictions_to_history(
-        upd_arrival_history, upd2_sched_history, upd2_retx_history, upd2_mcs_history, exp_config
+        upd_arrival_history, upd2_sched_history, upd2_retx_history, upd2_mcs_history, upd_mcs_index, exp_config
     )
 
     return upd3_sched_history, upd3_retx_history, upd3_mcs_history, upd_mcs_index
 
 def sample_based_e2e_prediction(
-        data,
-        arrival_runner, 
-        mcs_runner, 
-        retx_runner,
-        sched_runner, 
-        exp_config,
-        num_packets,
+        data, arrival_runner, mcs_runner, retx_runner, sched_runner, exp_config, 
+        num_future_packet_predictions,
         mcs_eval_interval_ms = 100,
         filter_successful_attempts_for_mcs = True,
         mcs_dimension_limit = 20,
@@ -820,10 +816,10 @@ def sample_based_e2e_prediction(
         [ data['retx' ] ]
     ] ) # [segment_history_size, mcs_size, retx_sequence_length]
 
-    packet0_arrival = data['label'][0]
+    packet0_arrival = data['scheduling'][-1]
     mcs_index = np.array([ packet0_arrival['mcs_index'] ]) # [mcs_size]
 
-    for packet_num in range(num_packets):
+    for packet_num in range(num_future_packet_predictions):
         for segment_num in range(max_num_segments):
             
             # figure all sizes
@@ -942,7 +938,7 @@ def sample_based_e2e_prediction(
         final_predictions.append(
             list(result_history[:,-(segment_num+1):])
         )
-        if len(final_predictions) == num_packets:
+        if len(final_predictions) == num_future_packet_predictions:
             break
         
         # prepare the next packet and mcs index
