@@ -250,12 +250,16 @@ def generate_predictions(args):
             num_packets = 2,
             mcs_eval_interval_ms = 100,
             filter_successful_attempts_for_mcs = True,
-            mcs_dimension_limit = 20,
-            history_dimension_limit = 100,
+            mcs_dimension_limit = 10,
+            history_dimension_limit = 10,
             exclude_link_quality = False,
             max_num_segments = 5
         )
-        print(predicted_packet_transmissions)
+        print(entry['label'])
+        print('-')
+        print(predicted_packet_transmissions[0][0])
+        print('-')
+        print(predicted_packet_transmissions[1][0])
         input()
 
 def plot_data(args):
