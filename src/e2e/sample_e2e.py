@@ -1,20 +1,6 @@
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from pathlib import Path
-import yaml, pickle, json, copy
+import copy
 import numpy as np
-
-from wireless_tpp.config_factory import Config
-from wireless_tpp.runner import TPPRunnerPacketArrival, TPPRunnerLinkQuality, TPPRunnerScheduling
 from wireless_tpp.utils import logger
-
-from edaf.core.uplink.analyze_packet import ULPacketAnalyzer
-from edaf.core.uplink.analyze_scheduling import ULSchedulingAnalyzer
-from edaf.core.uplink.analyze_channel import ULChannelAnalyzer
-
-from src.link_quality import extract_link_quality_events
-from src.packet_arrival import extract_packet_arrival_events
-from src.scheduling import extract_scheduling_events
 
 NUM_RBS_PADDING = 106
 NUM_SYMBOLS_PADDING = 14
@@ -717,6 +703,37 @@ def append_segment_predictions_to_history(
 
     return upd_sched_history, upd_retx_history, upd_mcs_history
 
+def reduce_history_dimension(
+        sched_history_sequence, retx_history_sequence, mcs_history_sequence, history_dimension_limit, mcs_dimension_limit
+    ):
+
+    segment_history_size = mcs_history_sequence.shape[0]
+    mcs_size = mcs_history_sequence.shape[1]
+
+    # dimension reduction for history sequences
+    # randomly select history_dimension_limit samples out of segment_history_size
+    # if segment_history_size is less than history_dimension_limit, then use all
+    if segment_history_size > history_dimension_limit:
+        selected_indices = np.random.choice(segment_history_size, history_dimension_limit, replace=False)
+        sched_history_sequence = sched_history_sequence[selected_indices, ...]
+        retx_history_sequence = retx_history_sequence[selected_indices, ...]
+        mcs_history_sequence = mcs_history_sequence[selected_indices, ...]
+
+    if mcs_size > mcs_dimension_limit:
+        selected_indices = np.random.choice(mcs_size, mcs_dimension_limit, replace=False)
+        mcs_index = mcs_index[selected_indices]
+        sched_history_sequence = sched_history_sequence[:, selected_indices, :]
+        retx_history_sequence = retx_history_sequence[:, selected_indices, :]
+        mcs_history_sequence = mcs_history_sequence[:, selected_indices, :]
+
+    # segment predictions have dim: [segment_pred_size, sched_history_size, mcs_size]
+    logger.info(f"reduced dim sched history sequences shape: {sched_history_sequence.shape}")
+    logger.info(f"reduced dim retx history sequences shape: {retx_history_sequence.shape}")
+    logger.info(f"reduced dim mcs history sequences shape: {mcs_history_sequence.shape}")
+    
+    return sched_history_sequence, retx_history_sequence, mcs_history_sequence
+
+
 def sample_based_e2e_prediction(
         data,
         arrival_runner, 
@@ -770,26 +787,10 @@ def sample_based_e2e_prediction(
             # these samples correspond to the same predictions
             # so they have to treated together
             assert mcs_history_size == retx_history_size == sched_history_size
-            segment_history_size = mcs_history_size
-
-            # dimension reduction for history sequences
-            # randomly select history_dimension_limit samples out of segment_history_size
-            # if segment_history_size is less than history_dimension_limit, then use all
-            if segment_history_size > history_dimension_limit:
-                selected_indices = np.random.choice(segment_history_size, history_dimension_limit, replace=False)
-                sched_history_sequence = sched_history_sequence[selected_indices, ...]
-                retx_history_sequence = retx_history_sequence[selected_indices, ...]
-                mcs_history_sequence = mcs_history_sequence[selected_indices, ...]
-            if mcs_size > mcs_dimension_limit:
-                selected_indices = np.random.choice(mcs_size, mcs_dimension_limit, replace=False)
-                mcs_index = mcs_index[selected_indices]
-                sched_history_sequence = sched_history_sequence[:, selected_indices, :]
-                retx_history_sequence = retx_history_sequence[:, selected_indices, :]
-                mcs_history_sequence = mcs_history_sequence[:, selected_indices, :]
-            # segment predictions have dim: [segment_pred_size, sched_history_size, mcs_size]
-            logger.info(f"reduced dim sched history sequences shape: {sched_history_sequence.shape}")
-            logger.info(f"reduced dim retx history sequences shape: {sched_history_sequence.shape}")
-            logger.info(f"reduced dim mcs history sequences shape: {sched_history_sequence.shape}")
+            
+            sched_history_sequence, retx_history_sequence, mcs_history_sequence = reduce_history_dimension(
+                sched_history_sequence, retx_history_sequence, mcs_history_sequence, history_dimension_limit, mcs_dimension_limit
+            )
             # update the shapes after dimension reduction
             sched_history_size = sched_history_sequence.shape[0]
             retx_history_size = retx_history_sequence.shape[0]    

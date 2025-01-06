@@ -251,7 +251,7 @@ def generate_predictions(args):
             mcs_eval_interval_ms = 100,
             filter_successful_attempts_for_mcs = True,
             mcs_dimension_limit = 20,
-            history_dimension_limit = 10,
+            history_dimension_limit = 100,
             exclude_link_quality = False,
             max_num_segments = 5
         )
