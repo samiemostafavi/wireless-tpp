@@ -477,6 +477,7 @@ def append_arrival_predictions_to_arrival_history(arrival_predictions, arrival_h
             for pos in range(arrival_sequence_length):
                 upd_arrival_history[idx,idy,pos]['idx_event'] = pos
     upd_arrival_history = upd_arrival_history.reshape(-1, arrival_sequence_length)
+
     # upd_arrival_history dim: [upd_arrival_history_size = num_arrival_samples*arrival_history_size, arrival_sequence_length]
     logger.info(f"updated arrival history shape: {upd_arrival_history.shape}")
     return upd_arrival_history
@@ -600,7 +601,6 @@ def append_arrival_predictions_to_history(upd_arrival_history, upd2_sched_histor
                 )
                 for pos in range(sched_sequence_length):
                     upd3_sched_history[idx, idy, idz, pos]['idx_event'] = pos
-
     # repeat retx, and mcs histories to match the size of upd2_sched_history
     upd3_retx_history = np.repeat(upd2_retx_history[np.newaxis, ...], upd_arrival_history_size, axis=0)
     upd3_mcs_history = np.repeat(upd2_mcs_history[np.newaxis, ...], upd_arrival_history_size, axis=0)
@@ -734,6 +734,58 @@ def reduce_history_dimension(
     return sched_history_sequence, retx_history_sequence, mcs_history_sequence
 
 
+def next_packet_and_mcs_prediction(
+        arrival_runner,
+        mcs_runner,
+        arrival_history_sequence,
+        upd_sched_history,
+        upd_retx_history,
+        upd_mcs_history,
+        mcs_eval_interval_ms,
+        exp_config,
+):
+    # predict arrival as it is not dependent on link quality or scheduling
+    # input dims: arrival_history_sequence dims: [arrival_history_size, arrival_sequence_length]
+    # output dims: [num_arrival_samples, arrival_history_size]
+    arrival_predictions = predict_arrival(
+        arrival_history_sequence, arrival_runner, exp_config
+    )
+
+    # output predictions_arrival has the size [num_arrival_samples, arrival_history_size]
+    # append the arrival predictions to the arrival history sequences
+    upd_arrival_history = append_arrival_predictions_to_arrival_history(
+        arrival_predictions, arrival_history_sequence
+    )
+    # output dims: [upd_arrival_history_size = num_arrival_samples*arrival_history_size, arrival_sequence_length]
+
+    # inputs:
+    # upd_mcs_history dims: [upd_mcs_history_size, mcs_size, history_sequence_length]
+    # output dims:
+    # predictions dims: [num_mcs_samples, upd_mcs_history_size, mcs_size]
+    mcs_predictions, next_mcs_eval_ts = predict_mcs(
+        mcs_runner, upd_mcs_history, mcs_eval_interval_ms
+    )
+
+    # inputs:
+    # mcs_predictions: [num_mcs_samples, mcs_history_size, mcs_size]
+    # upd_mcs_history: [upd_mcs_history_size, mcs_size, mcs_sequence_length]
+    # next_mcs_eval_ts: [mcs_history_size, mcs_size]
+    # outputs:
+    # upd2_sched_history: [upd_sched_history_size, upd_mcs_size = num_mcs_samples*mcs_size, mcs_sequence_length]
+    # upd2_mcs_history: [upd_mcs_history_size, upd_mcs_size = num_mcs_samples*mcs_size, mcs_sequence_length]
+    # upd2_retx_history: [upd_retx_history_size, upd_mcs_size = num_mcs_samples*mcs_size, mcs_sequence_length]
+    upd2_sched_history, upd2_retx_history, upd2_mcs_history, upd_mcs_index = append_mcs_predictions_to_history(
+        mcs_predictions, upd_mcs_history, upd_sched_history, upd_retx_history, next_mcs_eval_ts, exp_config
+    )
+
+    # input history has the dim: [upd_sched_history_size, upd_mcs_size, sched_sequence_length]
+    # output dims upd3_sched_history: [upd_arrival_history_size*upd_sched_history_size, upd_mcs_size, sched_sequence_length]
+    upd3_sched_history, upd3_retx_history, upd3_mcs_history = append_arrival_predictions_to_history(
+        upd_arrival_history, upd2_sched_history, upd2_retx_history, upd2_mcs_history, exp_config
+    )
+
+    return upd3_sched_history, upd3_retx_history, upd3_mcs_history, upd_mcs_index
+
 def sample_based_e2e_prediction(
         data,
         arrival_runner, 
@@ -770,8 +822,6 @@ def sample_based_e2e_prediction(
 
     packet0_arrival = data['label'][0]
     mcs_index = np.array([ packet0_arrival['mcs_index'] ]) # [mcs_size]
-
-    prediction_counter = 0
 
     for packet_num in range(num_packets):
         for segment_num in range(max_num_segments):
@@ -874,62 +924,7 @@ def sample_based_e2e_prediction(
 
             # check if this packet is done
             if no_sched_mask_sum/total_num_projections > 0.9:
-                logger.info("No more segments to schedule, heading to the next packet")
-
-                # prepare the results
-                final_predictions.append(
-                    upd_sched_history[:,:,-(prediction_counter+1):]
-                )
-                if len(final_predictions) == num_packets:
-                    return final_predictions
-                prediction_counter = 0
-
-                # predict arrival as it is not dependent on link quality or scheduling
-                # input dims: arrival_history_sequence dims: [arrival_history_size, arrival_sequence_length]
-                # output dims: [num_arrival_samples, arrival_history_size]
-                arrival_predictions = predict_arrival(
-                    arrival_history_sequence, arrival_runner, exp_config
-                )
-
-                # output predictions_arrival has the size [num_arrival_samples, arrival_history_size]
-                # append the arrival predictions to the arrival history sequences
-                upd_arrival_history = append_arrival_predictions_to_arrival_history(
-                    arrival_predictions, arrival_history_sequence
-                )
-                # output dims: [upd_arrival_history_size = num_arrival_samples*arrival_history_size, arrival_sequence_length]
-
-                # inputs:
-                # upd_mcs_history dims: [upd_mcs_history_size, mcs_size, history_sequence_length]
-                # output dims:
-                # predictions dims: [num_mcs_samples, upd_mcs_history_size, mcs_size]
-                mcs_predictions, next_mcs_eval_ts = predict_mcs(
-                    mcs_runner, upd_mcs_history, mcs_eval_interval_ms
-                )
-
-                # inputs:
-                # mcs_predictions: [num_mcs_samples, mcs_history_size, mcs_size]
-                # upd_mcs_history: [upd_mcs_history_size, mcs_size, mcs_sequence_length]
-                # next_mcs_eval_ts: [mcs_history_size, mcs_size]
-                # outputs:
-                # upd2_sched_history: [upd_sched_history_size, upd_mcs_size = num_mcs_samples*mcs_size, mcs_sequence_length]
-                # upd2_mcs_history: [upd_mcs_history_size, upd_mcs_size = num_mcs_samples*mcs_size, mcs_sequence_length]
-                # upd2_retx_history: [upd_retx_history_size, upd_mcs_size = num_mcs_samples*mcs_size, mcs_sequence_length]
-                upd2_sched_history, upd2_retx_history, upd2_mcs_history, upd_mcs_index = append_mcs_predictions_to_history(
-                    mcs_predictions, upd_mcs_history, upd_sched_history, upd_retx_history, next_mcs_eval_ts, exp_config
-                )
-
-                # input history has the dim: [upd_sched_history_size, upd_mcs_size, sched_sequence_length]
-                # output dims upd3_sched_history: [upd_arrival_history_size*upd_sched_history_size, upd_mcs_size, sched_sequence_length]
-                upd3_sched_history, upd3_retx_history, upd3_mcs_history = append_arrival_predictions_to_history(
-                    upd_arrival_history, upd2_sched_history, upd2_retx_history, upd2_mcs_history, exp_config
-                )
-
-                # update the history sequences
-                mcs_history_sequence = upd3_mcs_history
-                retx_history_sequence = upd3_retx_history
-                sched_history_sequence = upd3_sched_history
-                mcs_index = upd_mcs_index
-
+                logger.info("No more segments to schedule.")
                 # go to the next packet
                 break
             else:
@@ -937,8 +932,34 @@ def sample_based_e2e_prediction(
                 mcs_history_sequence = upd_mcs_history
                 retx_history_sequence = upd_retx_history
                 sched_history_sequence = upd_sched_history
-                prediction_counter += 1 # one more scheduling prediction
-
                 # go to the next segment
+
+        # next packet
+        # prepare the results
+        result_history = copy.deepcopy(upd_sched_history).reshape(
+            upd_sched_history.shape[0]*upd_sched_history.shape[1], upd_sched_history.shape[2]
+        )
+        final_predictions.append(
+            list(result_history[:,-(segment_num+1):])
+        )
+        if len(final_predictions) == num_packets:
+            break
+        
+        # prepare the next packet and mcs index
+        upd3_sched_history, upd3_retx_history, upd3_mcs_history, upd_mcs_index = next_packet_and_mcs_prediction(
+            arrival_runner,
+            mcs_runner,
+            arrival_history_sequence,
+            upd_sched_history,
+            upd_retx_history,
+            upd_mcs_history,
+            mcs_eval_interval_ms,
+            exp_config,
+        )
+        # update the history sequences
+        mcs_history_sequence = upd3_mcs_history
+        retx_history_sequence = upd3_retx_history
+        sched_history_sequence = upd3_sched_history
+        mcs_index = upd_mcs_index
 
     return final_predictions
