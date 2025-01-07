@@ -115,12 +115,24 @@ class RunnerConfig(Config):
     def update_config(self):
         """Updated config dict.
         """
-        model_folder_name = get_unique_id()
 
-        log_folder = create_folder(self.base_config.base_dir, model_folder_name)
-        model_folder = create_folder(log_folder, 'models')
+        log_folder_is_set = False
+        if self.base_config.specs:
+            if 'log_folder' in self.base_config.specs:
+                if self.base_config.specs['log_folder'] is not None:
+                    log_folder_is_set = True
 
-        self.base_config.specs['log_folder'] = log_folder
+        if not log_folder_is_set:
+            model_folder_name = get_unique_id()
+
+            log_folder = create_folder(self.base_config.base_dir, model_folder_name)
+            model_folder = create_folder(log_folder, 'models')
+
+            self.base_config.specs['log_folder'] = log_folder
+        else:
+            log_folder = self.base_config.specs['log_folder']
+            model_folder = create_folder(log_folder, 'models')
+
         self.base_config.specs['saved_model_dir'] = os.path.join(model_folder, 'saved_model')
         self.base_config.specs['saved_log_dir'] = os.path.join(log_folder, 'log')
         self.base_config.specs['output_config_dir'] = os.path.join(log_folder,

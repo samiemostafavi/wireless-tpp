@@ -388,7 +388,7 @@ def create_training_dataset(args):
             link_event_mcs_k1, mcs_k1 = find_next_event_after_input(sched_event_m, filtered_link_events, {'key': 'type_event', 'value': 1})
             if link_event_mcs_k1 is None:
                 continue
-            mcs_history_sequence = window_history_mcs_decision_events(mcs_k1, filtered_link_events, mcs_dataset_config['window_config']['size'], sched_event_m['timestamp'] + 0.0001)
+            mcs_history_sequence = window_history_mcs_decision_events(mcs_k1, filtered_link_events, mcs_dataset_config['window_config']['size'])
             if len(mcs_history_sequence) == 0:
                 continue
 

@@ -11,7 +11,7 @@ def run_e2e(inp_args):
         generate_predictions(inp_args)
     elif inp_args.function == "plot_predictions":
         plot_predictions(inp_args)
-    elif inp_args.function == "evaluate":
+    elif inp_args.function == "evaluate_model":
         evaluate_model(inp_args)
     else:
         print("Invalid function specified")

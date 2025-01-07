@@ -646,16 +646,13 @@ def window_history_segment_events(l1, segment_events, history_window_size):
         prev_event_ts = event['timestamp']
     return events_window
 
-def window_history_mcs_decision_events(k1, link_events, history_window_size, middle_timestamp = None):
+def window_history_mcs_decision_events(k1, link_events, history_window_size):
     events_window = []
     prev_event_ts = 0
     if ((k1 - history_window_size) < 0) or ((k1 + 1) > len(link_events)):
         return []
     pos = 0
     for event in link_events[k1-history_window_size:k1+1]:
-        if middle_timestamp is not None:
-            if event['timestamp'] > middle_timestamp:
-                break
         events_window.append(
             {
                 'idx_event' : pos, 
@@ -665,17 +662,6 @@ def window_history_mcs_decision_events(k1, link_events, history_window_size, mid
         )
         pos += 1
         prev_event_ts = event['timestamp']
-
-    if middle_timestamp is not None:
-        # add the mcs decision event
-        event = link_events[k1]
-        events_window.append(
-            {
-                'idx_event' : pos, 
-                'time_since_last_event' : (event['timestamp'] - prev_event_ts)*1000 if pos > 0 else 0,
-                **event
-            }
-        )
     return events_window
 
 
