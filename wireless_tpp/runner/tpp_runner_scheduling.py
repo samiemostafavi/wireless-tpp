@@ -29,7 +29,9 @@ class TPPRunnerScheduling():
         if unique_model_dir:
             runner_config.model_dir = runner_config.base_config.specs['saved_model_dir'] + '_' + get_unique_id()
 
-        self.save_log()
+        disable_logging = kwargs.get('disable_logging', False)
+        if not disable_logging:
+            self.save_log()
 
         # build data reader
         data_config = self.runner_config.data_config

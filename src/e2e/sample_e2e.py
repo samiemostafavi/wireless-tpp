@@ -705,7 +705,7 @@ def append_segment_predictions_to_history(
     return upd_sched_history, upd_retx_history, upd_mcs_history
 
 def reduce_history_dimension(
-        sched_history_sequence, retx_history_sequence, mcs_history_sequence, history_dimension_limit, mcs_dimension_limit
+        sched_history_sequence, retx_history_sequence, mcs_history_sequence, mcs_index, history_dimension_limit, mcs_dimension_limit
     ):
 
     segment_history_size = mcs_history_sequence.shape[0]
@@ -731,8 +731,9 @@ def reduce_history_dimension(
     logger.info(f"reduced dim sched history sequences shape: {sched_history_sequence.shape}")
     logger.info(f"reduced dim retx history sequences shape: {retx_history_sequence.shape}")
     logger.info(f"reduced dim mcs history sequences shape: {mcs_history_sequence.shape}")
+    logger.info(f"reduced dim mcs index shape: {mcs_index.shape}")
     
-    return sched_history_sequence, retx_history_sequence, mcs_history_sequence
+    return sched_history_sequence, retx_history_sequence, mcs_history_sequence, mcs_index
 
 
 def next_packet_and_mcs_prediction(
@@ -834,13 +835,14 @@ def sample_based_e2e_prediction(
             # so they have to treated together
             assert mcs_history_size == retx_history_size == sched_history_size
             
-            sched_history_sequence, retx_history_sequence, mcs_history_sequence = reduce_history_dimension(
-                sched_history_sequence, retx_history_sequence, mcs_history_sequence, history_dimension_limit, mcs_dimension_limit
+            sched_history_sequence, retx_history_sequence, mcs_history_sequence, mcs_index = reduce_history_dimension(
+                sched_history_sequence, retx_history_sequence, mcs_history_sequence, mcs_index, history_dimension_limit, mcs_dimension_limit
             )
             # update the shapes after dimension reduction
             sched_history_size = sched_history_sequence.shape[0]
             retx_history_size = retx_history_sequence.shape[0]    
             mcs_history_size = mcs_history_sequence.shape[0]
+            mcs_size = mcs_index.shape[0]
 
             logger.info(f"Predicting packet {packet_num}, segment: {segment_num}, history sequence dims - mcs: {mcs_history_sequence.shape}, retx: {retx_history_sequence.shape}, sched: {sched_history_sequence.shape}")
 
