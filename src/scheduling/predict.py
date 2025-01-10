@@ -11,18 +11,32 @@ from wireless_tpp.utils import logger
 def generate_predictions(args):
 
     # read configuration from args.config
-    dataset_config_path = Path(args.source) / "scheduling" / "datasets" / args.name / 'config.json'
-    with open(dataset_config_path, 'r') as f:
-        dataset_config = json.load(f)
-
-    # read configuration from args.config
     prediction_config_path = Path(args.config)
     with open(prediction_config_path, 'r') as f:
         prediction_config = json.load(f)
     prediction_config = prediction_config[args.configname]
     batch_size = prediction_config['batch_size']
     gpu = prediction_config['gpu']
+
+    if prediction_config['dataset']:
+        dataset_path = Path(prediction_config['dataset']) / "scheduling" / "datasets" / prediction_config['dataset_name']
+    else:
+        dataset_path = Path(args.source) / "scheduling" / "datasets" / args.name
+
     prediction_config['method'] = args.predict
+
+    dataset_id = str(dataset_path).replace("/", "_")
+    train_dir = dataset_path / 'train.pkl'
+    valid_dir = dataset_path / 'dev.pkl'
+    test_dir = dataset_path / 'test.pkl'
+    data_format = 'pkl'
+
+    # read configuration from args.config
+    dataset_config_path = dataset_path / 'config.json'
+    with open(dataset_config_path, 'r') as f:
+        dataset_config = json.load(f)
+
+    logger.info(f"Loaded dataset {dataset_id}: {dataset_path}")
 
     model_path = Path(args.source) / "scheduling" / "trained_models" / args.name / args.id
     yaml_file = next(model_path.glob("*.yaml"))
@@ -38,22 +52,16 @@ def generate_predictions(args):
     config = {
         "pipeline_config_id": "runner_config",
         "data": {
-            training_output_config['base_config']['dataset_id']: {
-                "data_format": training_output_config['data_config']['data_format'],
-                "train_dir": training_output_config['data_config']['train_dir'],
-                "valid_dir": training_output_config['data_config']['valid_dir'],
-                "test_dir": training_output_config['data_config']['test_dir'],
+            dataset_id: {
+                "data_format": data_format,
+                "train_dir": str(train_dir),
+                "valid_dir": str(valid_dir),
+                "test_dir": str(test_dir),
                 "data_specs": {
-                    "num_event_types": training_output_config['data_config']['data_specs']['num_event_types'],
-                    "pad_token_id": training_output_config['data_config']['data_specs']['pad_token_id'],
-                    "padding_side": training_output_config['data_config']['data_specs']['padding_side'],
-                    "truncation_side": training_output_config['data_config']['data_specs']['truncation_side'],
-                    "padding_strategy" : training_output_config['data_config']['data_specs']['padding_strategy'],
-                    "max_len": training_output_config['data_config']['data_specs']['max_len'],
-                    "includes_mcs" : training_output_config['data_config']['data_specs']['includes_mcs'],
-                    "num_event_types_no_mcs": training_output_config['data_config']['data_specs']['num_event_types_no_mcs'],
-                    "min_mcs": training_output_config['data_config']['data_specs']['min_mcs'],
-                    "mcs_events": training_output_config['data_config']['data_specs']['mcs_events']
+                    "num_event_types": dataset_config["dim_process"],
+                    "pad_token_id": dataset_config["dim_process"],
+                    "padding_strategy" : 'do_not_pad',
+                    "max_len": None
                 }
             }
         },
@@ -61,7 +69,7 @@ def generate_predictions(args):
             "base_config": {
                 "stage": "gen",
                 "backend": training_output_config['base_config']['backend'],
-                "dataset_id": training_output_config['base_config']['dataset_id'],
+                "dataset_id": dataset_id,
                 "runner_id": training_output_config['base_config']['runner_id'],
                 "model_id": training_output_config['base_config']['model_id'],
                 "base_dir": prediction_base_dir,
@@ -85,7 +93,7 @@ def generate_predictions(args):
                 "loss_integral_num_sample_per_step": training_output_config['model_config']['loss_integral_num_sample_per_step'],
                 "use_ln": training_output_config['model_config']['use_ln'],
                 "pretrained_model_dir": training_output_config['base_config']['specs']['saved_model_dir'],
-                "thinning": prediction_config['thinning'],
+                "thinning": {},
                 "noise_regularization": training_output_config['model_config']['noise_regularization'] if 'noise_regularization' in training_output_config['model_config'] else {} 
             },
             "prediction_config" : prediction_config
@@ -101,9 +109,10 @@ def generate_predictions(args):
 def plot_predictions(args):
 
     # read configuration from args.config
-    dataset_config_path = Path(args.source) / "scheduling" / "datasets" / args.name / 'config.json'
-    with open(dataset_config_path, 'r') as f:
-        dataset_config = json.load(f)
+    #dataset_config_path = Path(args.source) / "scheduling" / "datasets" / args.name / 'config.json'
+    #with open(dataset_config_path, 'r') as f:
+    #    dataset_config = json.load(f)
+    dataset_config = None
     
     model_path = Path(args.source) / "scheduling" / "prediction_results" / args.name / args.id
     yaml_file = next(model_path.glob("*.yaml"))

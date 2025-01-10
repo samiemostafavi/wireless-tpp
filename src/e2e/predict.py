@@ -311,13 +311,18 @@ def generate_predictions(args):
                 processed_samples = []
                 for s in range(num_samples):
                     sched_sequence = []
+                    reached_arrival = False
                     for l in np.arange(sched_seq_len-1,-1,-1):
                         sched_sequence.append(
                             pred_batch[p][b,s,l]
                         )
                         if pred_batch[p][b,s,l]['type_event'] == 0:
+                            reached_arrival = True
                             break
-                    processed_samples.append(sched_sequence[::-1])
+                    if reached_arrival:
+                        processed_samples.append(sched_sequence[::-1])
+                    else:
+                        logger.warning(f"Sample {s}, packet {p}, in batch {b} does not have an arrival event")
                 dataset[i+b]['pred'][p] = processed_samples
 
 

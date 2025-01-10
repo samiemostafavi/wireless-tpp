@@ -105,41 +105,40 @@ class TorchModelWrapper:
         """
 
         batch = batch.to(self.device).values()
-        if phase in (RunnerPhase.TRAIN, RunnerPhase.VALIDATE):
-            # set mode to train
-            is_training = (phase == RunnerPhase.TRAIN)
-            self.model.train(is_training)
 
-            # FullyRNN needs grad event in validation stage
-            grad_flag = is_training
-            # run model
-            with torch.set_grad_enabled(grad_flag):
-                loss, num_event, dtime_loss, len_loss = self.model.loglike_loss(batch)
+        # set mode to train
+        is_training = (phase == RunnerPhase.TRAIN)
+        self.model.train(is_training)
 
-            # Assume we dont do prediction on train set
-            pred_dtime, pred_len, pred_dtime_var, pred_len_var, label_dtime, label_len, mask = None, None, None, None, None, None, None
+        # FullyRNN needs grad event in validation stage
+        grad_flag = is_training
+        # run model
+        with torch.set_grad_enabled(grad_flag):
+            loss, num_event, dtime_loss, len_loss = self.model.loglike_loss(batch)
 
-            # update grad
-            if is_training:
-                self.opt.zero_grad()
-                (loss / num_event).backward()
-                self.opt.step()
-            else:
-                #self.model.eval()
-                with torch.no_grad():
-                    (pred_dtime, pred_dtime_var), (pred_len, pred_len_var), \
-                        (label_dtime, label_len), event_mask, num_events = self.model.predict_mean_variance(batch=batch)
-                    pred_dtime = pred_dtime.detach().cpu().numpy()
-                    pred_dtime_var = pred_dtime_var.detach().cpu().numpy()
-                    pred_len = pred_len.detach().cpu().numpy()
-                    pred_len_var = pred_len_var.detach().cpu().numpy()
-                    label_dtime = label_dtime.detach().cpu().numpy()
-                    label_len = label_len.detach().cpu().numpy()
-                    mask = event_mask.detach().cpu().numpy()
+        # Assume we dont do prediction on train set
+        pred_dtime, pred_len, pred_dtime_var, pred_len_var, label_dtime, label_len, mask = None, None, None, None, None, None, None
 
-            return loss.item(), num_event, (pred_dtime, pred_len), (label_dtime, label_len), mask, dtime_loss.item(), len_loss.item(), (pred_dtime_var, pred_len_var)
+        # update grad
+        if is_training:
+            self.opt.zero_grad()
+            (loss / num_event).backward()
+            self.opt.step()
         else:
-            raise NotImplementedError()
+            #self.model.eval()
+            with torch.no_grad():
+                (pred_dtime, pred_dtime_var), (pred_len, pred_len_var), \
+                    (label_dtime, label_len), event_mask, num_events = self.model.predict_mean_variance(batch=batch)
+                pred_dtime = pred_dtime.detach().cpu().numpy()
+                pred_dtime_var = pred_dtime_var.detach().cpu().numpy()
+                pred_len = pred_len.detach().cpu().numpy()
+                pred_len_var = pred_len_var.detach().cpu().numpy()
+                label_dtime = label_dtime.detach().cpu().numpy()
+                label_len = label_len.detach().cpu().numpy()
+                mask = event_mask.detach().cpu().numpy()
+
+        return loss.item(), num_event, (pred_dtime, pred_len), (label_dtime, label_len), mask, dtime_loss.item(), len_loss.item(), (pred_dtime_var, pred_len_var)
+
 
     def run_batch_mcs(self, batch, phase):
         """Run one batch.
