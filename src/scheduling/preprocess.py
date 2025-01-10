@@ -90,7 +90,6 @@ def plot_data(args):
         exp_config = json.load(f)
 
     time_masks = config['time_masks']
-    filter_packet_sizes = config['filter_packet_sizes']
     window_config = config['window_config']
     dataset_size_max = config['dataset_size_max']
     split_ratios = config['split_ratios']
@@ -335,7 +334,6 @@ def plot_scheduling_interarrival_data(args):
         exp_config = json.load(f)
 
     time_masks = config['time_masks']
-    filter_packet_sizes = config['filter_packet_sizes']
     window_config = config['window_config']
     dataset_size_max = config['dataset_size_max']
     split_ratios = config['split_ratios']
@@ -561,6 +559,102 @@ def plot_scheduling_interarrival_data(args):
     fig.write_html(str(results_folder_addr / 'retx_plot.html'))
 
     
+def create_training_subdataset(args):
+    """
+    Create a training dataset
+    """
+
+    # read configuration from args.config
+    with open(args.config, 'r') as f:
+        dataset_config = json.load(f)
+    # select the source configuration
+    dataset_config = dataset_config[args.configname]
+
+    # read experiment configuration
+    folder_addr = Path(args.source)
+    # find all .db files in the folder
+    db_files = list(folder_addr.glob("*.db"))
+    if not db_files:
+        logger.error("No database files found in the specified folder.")
+        return
+    result_database_files = [str(db_file) for db_file in db_files]
+
+    # this means we have a main dataset and now we need to create training datasets
+    dataset_size = dataset_config["dataset_size_max"]
+    split_ratios = dataset_config["split_ratios"]
+
+    # open the dataset in the same folder with name "main"
+    dataset_pickle_file = folder_addr / 'scheduling' / 'datasets' / 'main' / 'dataset.pkl'
+    with open(dataset_pickle_file, 'rb') as f:
+        dataset = pickle.load(f)
+    dataset_json_file = folder_addr / 'scheduling' / 'datasets' / 'main' / 'config.json'
+    with open(dataset_json_file, 'r') as f:
+        main_dataset_config = json.load(f)
+
+    dataset_size = main_dataset_config["size"]
+    dataset_dim_process = main_dataset_config["dim_process"]
+
+    sub_dataset_size = dataset_config["dataset_size_max"]
+    assert sub_dataset_size <= dataset_size, "Sub dataset size must be less than or equal to the main dataset size"
+
+    # give sub_dataset_size random numbers between 0 and dataset_size-1, they should not repeat.
+    random_indices = random.sample(range(dataset_size), sub_dataset_size)
+    random.shuffle(random_indices)
+    sub_dataset = [dataset[i] for i in random_indices]
+    logger.info(f"Prepared sub dataset with size {len(sub_dataset)}, saving with split ratios {split_ratios}")
+
+    # split
+    train_num = int(len(sub_dataset)*split_ratios[0])
+    dev_num = int(len(sub_dataset)*split_ratios[1])
+    test_num = len(sub_dataset)-train_num-dev_num
+    print("train: ", train_num, " - val: ", dev_num, " - test ", test_num)
+
+    # prepare the results folder
+    results_folder_addr = folder_addr / 'scheduling' / 'datasets' / args.name
+    results_folder_addr.mkdir(parents=True, exist_ok=True)
+
+    # Save the dataset config
+    output_config = {
+        "train_size" : train_num,
+        "val_size" : dev_num,
+        "test_size" : test_num,
+        "sub_size": len(sub_dataset),
+        **main_dataset_config,
+    }
+    with open(results_folder_addr / 'config.json', 'w') as f:
+        json_obj = json.dumps(output_config, indent=4)
+        f.write(json_obj)
+
+    # train
+    train_ds = {
+        'dim_process' : int(dataset_dim_process),
+        'train' : sub_dataset[0:train_num],
+    }
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'train.pkl', 'wb') as f:
+        pickle.dump(train_ds, f)
+
+    # dev
+    dev_ds = {
+        'dim_process' : int(dataset_dim_process),
+        'dev' : sub_dataset[train_num:train_num+dev_num],
+    }
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'dev.pkl', 'wb') as f:
+        pickle.dump(dev_ds, f)
+
+    # test
+    test_ds = {
+        'dim_process' : int(dataset_dim_process),
+        'test' : sub_dataset[train_num+dev_num:-1],
+    }
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'test.pkl', 'wb') as f:
+        pickle.dump(test_ds, f)
+
+    return
+
+
 def create_training_dataset(args):
     """
     Create a training dataset
@@ -591,13 +685,9 @@ def create_training_dataset(args):
     window_config = dataset_config['window_config']
     if window_config['type'] == 'event':
         window_size_events = window_config['size']
-        max_num_segments = window_config['max_num_segments']
     else:
         logger.error("Only event window configuration is supported for now.")
         return
-    dataset_size_max = dataset_config['dataset_size_max']
-    split_ratios = dataset_config['split_ratios']
-    dtime_max = dataset_config['dtime_max']
 
     # prepare the results folder
     results_folder_addr = folder_addr / 'scheduling' / 'datasets' / args.name
@@ -650,7 +740,6 @@ def create_training_dataset(args):
         logger.info(f"Database {db_id}, maximum segment number: {this_db_max_segment}")
 
         logger.info(f"Creating training dataset for db {db_id}")
-        dataset_size_max = dataset_config['dataset_size_max']
         history_window_size = dataset_config['window_config']['size']
         dataset_this_db = []
         for m in range(len(this_db_scheduling_events) - 2, -1, -1):
@@ -664,9 +753,6 @@ def create_training_dataset(args):
             hist_sequence = window_history_scheduling_events(m1, this_db_scheduling_events, history_window_size)
             if len(hist_sequence) > 0:
                 dataset_this_db.append(hist_sequence)
-                
-            if len(dataset_this_db) > dataset_size_max:
-                break
 
         # print length of dataset
         logger.info(f"Number of total entries produced by db {db_id} dataset: {len(dataset_this_db)}")
@@ -677,52 +763,22 @@ def create_training_dataset(args):
 
         db_id += 1
 
-    # shuffle the dataset
-    random.shuffle(dataset)
-
     logger.success(f"Number of total entries in the dataset: {len(dataset)}")
 
     # Save the dataset config
     dataset_config = {
         "stream_rntis" : stream_rntis,
         "dim_process" : int(dim_process),
+        "size": len(dataset),
         **dataset_config,
     }
     with open(results_folder_addr / 'config.json', 'w') as f:
         json_obj = json.dumps(dataset_config, indent=4)
         f.write(json_obj)
 
-    # split
-    train_num = int(len(dataset)*split_ratios[0])
-    dev_num = int(len(dataset)*split_ratios[1])
-    print("train: ", train_num, " - dev: ", dev_num)
-
-    # train
-    train_ds = {
-        'dim_process' : int(dim_process),
-        'train' : dataset[0:train_num],
-    }
     # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'train.pkl', 'wb') as f:
-        pickle.dump(train_ds, f)
-
-    # dev
-    dev_ds = {
-        'dim_process' : int(dim_process),
-        'dev' : dataset[train_num:train_num+dev_num],
-    }
-    # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'dev.pkl', 'wb') as f:
-        pickle.dump(dev_ds, f)
-
-    # test
-    test_ds = {
-        'dim_process' : int(dim_process),
-        'test' : dataset[train_num+dev_num:-1],
-    }
-    # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'test.pkl', 'wb') as f:
-        pickle.dump(test_ds, f)
+    with open(results_folder_addr / 'dataset.pkl', 'wb') as f:
+        pickle.dump(dataset, f)
 
 
 def extract_scheduling_events(packet_analyzer, sched_analyzer, begin_ts, end_ts, exp_config):

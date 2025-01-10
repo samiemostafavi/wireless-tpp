@@ -1204,7 +1204,7 @@ def sample_based_e2e_prediction_batch(
             upd_sched_history.shape[0], upd_sched_history.shape[1]*upd_sched_history.shape[2], upd_sched_history.shape[3]
         )
         final_predictions.append(
-            result_history[:,:,-(segment_num+1):]
+            result_history[:,:,:]
         )
         if len(final_predictions) >= num_future_packet_predictions:
             break

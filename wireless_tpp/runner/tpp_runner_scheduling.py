@@ -44,8 +44,9 @@ class TPPRunnerScheduling():
             **kwargs
         )
 
-        # needed for transformation of the data
-        if data_config is not None:
+        # needed for transformation of the data 
+        current_stage = get_stage(self.runner_config.base_config.stage)
+        if data_config is not None and current_stage == RunnerPhase.TRAIN:
             mean_dtime, std_dtime, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
                 self._data_loader.train_loader().dataset.get_stats(inp_type='time_delta_seqs', packet_or_segment=False, num_event_types=self.runner_config.data_config.data_specs.num_event_types)
             )
@@ -178,9 +179,9 @@ class TPPRunnerScheduling():
         logger.info(f'End {model_id} train! Cost time: {timer.end()}')
         return model
 
-    def evaluate(self, valid_loader=None, **kwargs):
-        if valid_loader is None:
-            valid_loader = self._data_loader.valid_loader()
+    def evaluate(self, test_loader=None, **kwargs):
+        if test_loader is None:
+            test_loader = self._data_loader.test_loader()
 
         logger.info(f'Data \'{self.runner_config.base_config.dataset_id}\' loaded...')
 
@@ -190,7 +191,7 @@ class TPPRunnerScheduling():
         logger.info(f'Start {model_id} evaluation...')
 
         metric = self._evaluate_model(
-            valid_loader,
+            test_loader,
             **kwargs
         )
         logger.info(f'End {model_id} evaluation! Cost time: {timer.end()}')
@@ -379,8 +380,6 @@ class TPPRunnerScheduling():
         total_loss = 0
         total_m_dtime_loss = 0
         total_m_len_loss = 0
-        dtime_loss = 0
-        event_loss = 0
         total_dtime_error = 0
         total_len_error = 0
         total_num_event = 0
@@ -392,89 +391,46 @@ class TPPRunnerScheduling():
         epoch_mask = []
         pad_index = self.runner_config.data_config.data_specs.pad_token_id
         metrics_dict = OrderedDict()
-        if phase in [RunnerPhase.TRAIN, RunnerPhase.VALIDATE]:
-            for batch in data_loader:
-                batch_loss, batch_num_event, batch_pred, batch_label, batch_mask, m_dtime_loss, m_len_loss, batch_pred_var = \
-                    self.model_wrapper.run_batch_mdn(batch, phase=phase)
 
-                total_loss += batch_loss
-                total_m_dtime_loss += m_dtime_loss
-                total_m_len_loss += m_len_loss
-                total_num_event += batch_num_event
-                if phase == RunnerPhase.VALIDATE:
-                    batch_mask_int = np.array(batch_mask,dtype=int)
-                    total_dtime_error += sum(np.multiply(np.array(abs(batch_label[0] - batch_pred[0])),batch_mask_int))
-                    total_len_error += sum(np.multiply(np.array(abs(batch_label[1] - batch_pred[1])),batch_mask_int))
-                    total_dtime_var += sum(np.multiply(np.array(batch_pred_var[0]),batch_mask_int))
-                    total_len_var += sum(np.multiply(np.array(batch_pred_var[1]),batch_mask_int))
-                    epoch_pred.append(batch_pred)
-                    epoch_pred_var.append(batch_pred_var)
-                    epoch_label.append(batch_label)
-                    epoch_mask.append(batch_mask)
+        for batch in data_loader:
+            batch_loss, batch_num_event, batch_pred, batch_label, batch_mask, m_dtime_loss, m_len_loss, batch_pred_var = \
+                self.model_wrapper.run_batch_mdn(batch, phase=phase)
 
-            # calc loss
-            avg_loss = total_loss / total_num_event
-            avg_m_dtime_loss = total_m_dtime_loss / total_num_event
-            avg_m_len_loss = total_m_len_loss / total_num_event
-            metrics_dict.update({'loglike': -avg_loss, 'num_events': total_num_event, 'dtime_loglike': -avg_m_dtime_loss, 'len_loglike': -avg_m_len_loss})
-
-            # calc errors
-            if phase == RunnerPhase.VALIDATE:
-                avg_dtime_error = total_dtime_error / total_num_event
-                avg_len_error = total_len_error / total_num_event
-                avg_dtime_var = total_dtime_var / total_num_event
-                avg_len_var = total_len_var / total_num_event
-                metrics_dict.update({'dtime_mae': avg_dtime_error, 'len_mae': avg_len_error, 'dtime_var': avg_dtime_var, 'len_var': avg_len_var})
-
-        else:
-            for batch in data_loader:
-                batch_pred, ll_dtime, ll_type, batch_num_event, batch_label = self.model_wrapper.run_batch_mdn(batch, phase=phase)
-                total_loss += (ll_dtime+ll_type)
-                dtime_loss += ll_dtime
-                event_loss += ll_type
-                total_num_event += batch_num_event
+            total_loss += batch_loss
+            total_m_dtime_loss += m_dtime_loss
+            total_m_len_loss += m_len_loss
+            total_num_event += batch_num_event
+            if phase == RunnerPhase.VALIDATE or phase == RunnerPhase.EVALUATE:
+                # assert the shapes of batch_label[0], batch_label[1], batch_pred[0], batch_pred[1], batch_pred_var[0], batch_pred_var[1], and batch_mask_int
+                # are only one dimensional like: (batch_size, )
+                assert batch_label[0].shape == batch_label[1].shape == batch_pred[0].shape == batch_pred[1].shape == batch_pred_var[0].shape == batch_pred_var[1].shape == batch_mask.shape, \
+                    "Shapes of batch_label, batch_pred, batch_pred_var, and batch_mask must be the same {} {} {} {} {} {} {}".format(
+                        batch_label[0].shape, batch_label[1].shape, batch_pred[0].shape, batch_pred[1].shape, batch_pred_var[0].shape, batch_pred_var[1].shape, batch_mask.shape
+                    )
+                batch_mask_int = np.array(batch_mask,dtype=int)
+                tmp = np.multiply(np.array(abs(batch_label[0] - batch_pred[0])),batch_mask_int)
+                total_dtime_error += sum(np.multiply(np.array(abs(batch_label[0] - batch_pred[0])),batch_mask_int))
+                total_len_error += sum(np.multiply(np.array(abs(batch_label[1] - batch_pred[1])),batch_mask_int))
+                total_dtime_var += sum(np.multiply(np.array(batch_pred_var[0]),batch_mask_int))
+                total_len_var += sum(np.multiply(np.array(batch_pred_var[1]),batch_mask_int))
                 epoch_pred.append(batch_pred)
+                epoch_pred_var.append(batch_pred_var)
                 epoch_label.append(batch_label)
+                epoch_mask.append(batch_mask)
 
-            avg_total_ll = total_loss / total_num_event
-            avg_dtime_ll = dtime_loss / total_num_event
-            avg_event_ll = event_loss / total_num_event
+        # calc loss
+        avg_loss = total_loss / total_num_event
+        avg_m_dtime_loss = total_m_dtime_loss / total_num_event
+        avg_m_len_loss = total_m_len_loss / total_num_event
+        metrics_dict.update({'loglike': -avg_loss, 'num_events': total_num_event, 'dtime_loglike': -avg_m_dtime_loss, 'len_loglike': -avg_m_len_loss})
 
-            metrics_dict.update({'total_ll': avg_total_ll, 'dtime_ll':avg_dtime_ll, 'event_type_ll':avg_event_ll, 'num_events': total_num_event})
-
-        # we need to improve the code here
-        # classify batch_output to list
-        #pred_exists, label_exists = False, False
-        #if epoch_pred[0][0] is not None:
-        #    epoch_pred = concat_element(epoch_pred, pad_index)
-        #    pred_exists = True
-        #if len(epoch_label) > 0 and epoch_label[0][0] is not None:
-        #    epoch_label = concat_element(epoch_label, pad_index)
-        #    label_exists = True
-        #    if len(epoch_mask):
-        #        epoch_mask = concat_element(epoch_mask, False)[0]  # retrieve the first element of concat array
-        #        epoch_mask = epoch_mask.astype(bool)
-        #if pred_exists and label_exists:
-        #    metrics_dict.update(self.metric_functions(epoch_pred, epoch_label, seq_mask=epoch_mask))
-
-        if phase not in [RunnerPhase.TRAIN, RunnerPhase.VALIDATE]:
-            if self.runner_config.base_config.model_id == 'IntensityFree':
-                metrics_dict.update(
-                    {
-                        'rmse_dtime' : rmse_dtime_metric_function(epoch_pred, epoch_label),
-                        'rmse_event' : rmse_event_metric_function(epoch_pred, epoch_label),
-                    }
-                )
-            elif self.runner_config.base_config.model_id == 'IntensityFree2D':
-                metrics_dict.update(
-                    {
-                        'rmse_2d' : rmse_2d_metric_function(epoch_pred, epoch_label),
-                        'rmse_2d_dtime' : rmse_2d_dtime_metric_function(epoch_pred, epoch_label),
-                        'rmse_2d_event' : rmse_2d_event_metric_function(epoch_pred, epoch_label),
-                    }
-                )
-            else:
-                metrics_dict.update(self.metric_functions(epoch_pred, epoch_label, seq_mask=epoch_mask))
+        # calc errors
+        if phase == RunnerPhase.VALIDATE or phase == RunnerPhase.EVALUATE:
+            avg_dtime_error = total_dtime_error / total_num_event
+            avg_len_error = total_len_error / total_num_event
+            avg_dtime_var = total_dtime_var / total_num_event
+            avg_len_var = total_len_var / total_num_event
+            metrics_dict.update({'dtime_mae': avg_dtime_error, 'len_mae': avg_len_error, 'dtime_var': avg_dtime_var, 'len_var': avg_len_var})
 
         if phase == RunnerPhase.PREDICT:
             metrics_dict.update({'pred': epoch_pred, 'label': epoch_label})
@@ -505,8 +461,7 @@ class TPPRunnerScheduling():
             epoch_label.append(batch_label)
             masks.append(batch_masks)
 
-        if phase == RunnerPhase.PREDICT:
-            metrics_dict.update({'pred': probs_pred, 'label': epoch_label, 'mask': masks})
+        metrics_dict.update({'pred': probs_pred, 'label': epoch_label, 'mask': masks})
 
         return metrics_dict
     

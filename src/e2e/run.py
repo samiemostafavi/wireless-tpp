@@ -1,6 +1,6 @@
 from .preprocess import plot_data, create_training_dataset
-from .predict import generate_predictions, plot_predictions
-from .evaluate import evaluate_model
+from .predict import generate_predictions
+from .evaluate import evaluate_model, plot_predictions
 
 def run_e2e(inp_args):
     if inp_args.function == "plot_data":

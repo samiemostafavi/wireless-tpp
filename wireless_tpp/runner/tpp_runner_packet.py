@@ -45,7 +45,8 @@ class TPPRunnerPacketArrival():
         )
 
         # needed for model training
-        if data_config is not None:
+        current_stage = get_stage(self.runner_config.base_config.stage)
+        if data_config is not None and current_stage == RunnerPhase.TRAIN:
             mean_dtime, std_dtime, mean_event_type, std_event_type, min_dt, max_dt, min_eventtype, max_eventtype = (
                 self._data_loader.train_loader().dataset.get_dt_stats()
             )

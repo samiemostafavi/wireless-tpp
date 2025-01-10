@@ -26,6 +26,8 @@ class SingleStepScheduling(TorchBaseModel):
         self.std_dtime = model_config.model_specs.get("std_dtime", 1.0)
         self.mean_len = model_config.model_specs.get("mean_len", 0.0)
         self.std_len = model_config.model_specs.get("std_len", 1.0)
+        logger.info(f"SingleStepScheduling loading mean and std of dtime: {self.mean_dtime}, {self.std_dtime}")
+        logger.info(f"SingleStepScheduling loading mean and std of len: {self.mean_len}, {self.std_len}")
         self.len_hist_transform = D.AffineTransform(loc=self.mean_len, scale=self.std_len)
 
         # Noise regularization, only Gaussian noise is supported
@@ -103,7 +105,7 @@ class SingleStepScheduling(TorchBaseModel):
         self.rfailed_pad_id = 2
 
         self.num_event_types_pad = 7 # should be 4
-
+        self.pad_token_id = 6
         # Embedding layers defenitions
         # temporal encoding
         self.layer_temporal_encoding = TimePositionalEncoding(
@@ -514,6 +516,9 @@ class SingleStepScheduling(TorchBaseModel):
             pred_len = pred_len_dist.mean[..., 0]
             pred_len_var = pred_len_dist.variance[..., 0]
 
+            dtime_label = dtime_seqs_transformed[:, -1]
+            len_label = len_seqs_transformed[:, -1]
+            return (pred_dtime,pred_dtime_var), (pred_len,pred_len_var), (dtime_label, len_label), event_mask[...,0], num_events
         else:
             pred_joint_dist = self.joint_distribution(enc_out)
             mean_pred = pred_joint_dist.mean
@@ -528,10 +533,9 @@ class SingleStepScheduling(TorchBaseModel):
             pred_len_var = pred_len_dist.variance
 
 
-        dtime_label = dtime_seqs_transformed[:, -1]
-        len_label = len_seqs_transformed[:, -1]
-
-        return (pred_dtime,pred_dtime_var), (pred_len,pred_len_var), (dtime_label, len_label), event_mask[...,0], num_events
+            dtime_label = dtime_seqs_transformed[:, -1]
+            len_label = len_seqs_transformed[:, -1]
+            return (pred_dtime[...,-1],pred_dtime_var[...,-1]), (pred_len[...,-1],pred_len_var[...,-1]), (dtime_label, len_label), event_mask[...,0], num_events
 
 
     def predict_probabilities(self, batch, prediction_config, forward=False):
