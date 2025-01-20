@@ -43,8 +43,8 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
         mretx_seqs = [[x["mretx"] for x in seq] for seq in source_data]
         rfailed_seqs = [[x["rfailed"] for x in seq] for seq in source_data]
         num_rbs_seqs = [[x["num_rbs"] for x in seq] for seq in source_data]
-
-        # default keys
+        interarrival_time_seqs = [[x["interarrival_time"] for x in seq] for seq in source_data]
+        label_mask_seqs = [[x["label_mask"] for x in seq] for seq in source_data]
         time_seqs = [[x["time_since_start"] for x in seq] for seq in source_data]
         type_seqs = [[x["type_event"] for x in seq] for seq in source_data]
         time_delta_seqs = [[x["time_since_last_event"] for x in seq] for seq in source_data]
@@ -59,7 +59,9 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
                 'num_rbs_seqs': num_rbs_seqs,
                 'time_seqs': time_seqs, 
                 'time_delta_seqs': time_delta_seqs, 
-                'type_seqs': type_seqs
+                'type_seqs': type_seqs,
+                'interarrival_time_seqs' : interarrival_time_seqs,
+                'label_mask_seqs' : label_mask_seqs
             }
         )
 
@@ -88,11 +90,13 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
         mretx_seqs = data['mretx']
         rfailed_seqs = data['rfailed']
         num_rbs_seqs = data['num_rbs']
-
+        
         # default keys
         time_seqs = data['time_since_start']
         type_seqs = data['type_event']
         time_delta_seqs = data['time_since_last_event']
+        interarrival_time_seqs = data['interarrival_time']
+        label_mask_seqs = data['label_mask']
 
         input_dict = dict(
             {
@@ -104,7 +108,9 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
                 'num_rbs_seqs': num_rbs_seqs,
                 'time_seqs': time_seqs, 
                 'time_delta_seqs': time_delta_seqs, 
-                'type_seqs': type_seqs
+                'type_seqs': type_seqs,
+                'interarrival_time_seqs' : interarrival_time_seqs,
+                'label_mask_seqs' : label_mask_seqs
             }
         )
         return input_dict
@@ -135,6 +141,9 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
             time_seqs = [[x["time_since_start"] for x in seq] for seq in self.source_data]
             type_seqs = [[x["type_event"] for x in seq] for seq in self.source_data]
             time_delta_seqs = [[x["time_since_last_event"] for x in seq] for seq in self.source_data]
+            interarrival_time_seqs = [[x["interarrival_time"] for x in seq] for seq in self.source_data]
+            label_mask_seqs = [[x["label_mask"] for x in seq] for seq in self.source_data]
+
             data = dict(
                 {
                     'slot_seqs': slot_seqs,
@@ -145,7 +154,9 @@ class TPPDataLoaderScheduling(BaseTPPDataLoader):
                     'num_rbs_seqs': num_rbs_seqs,
                     'time_seqs': time_seqs, 
                     'time_delta_seqs': time_delta_seqs, 
-                    'type_seqs': type_seqs
+                    'type_seqs': type_seqs,
+                    'interarrival_time_seqs' : interarrival_time_seqs,
+                    'label_mask_seqs' : label_mask_seqs
                 }
             )
         else:

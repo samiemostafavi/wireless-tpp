@@ -19,6 +19,7 @@ if not os.getenv('DEBUG'):
 NUM_RBS_PADDING = 106
 MRETX_PADDING = 4
 RFAILED_PADDING = 2
+NUM_BYTES_PADDING = -1
 
 def plot_data(args):
 
@@ -164,154 +165,199 @@ def figure_retransmission_probabilities(args):
 
     # read configuration from args.config
     with open(args.config, 'r') as f:
-        config = json.load(f)
+        dataset_config = json.load(f)
     # select the source configuration
-    config = config[args.configname]
+    dataset_config = dataset_config[args.configname]
+    main_ds_name = dataset_config["main_ds_name"]
+    
 
     # read experiment configuration
     folder_addr = Path(args.source)
-    # find all .db files in the folder
-    db_files = list(folder_addr.glob("*.db"))
-    if not db_files:
-        logger.error("No database files found in the specified folder.")
-        return
-    result_database_files = [str(db_file) for db_file in db_files]
 
-    # read exp configuration from args.config
-    with open(folder_addr / 'experiment_config.json', 'r') as f:
-        exp_config = json.load(f)
+    # this means we have a main dataset and now we need to create training datasets
+    dataset_size = dataset_config["dataset_size_max"]
+    split_ratios = dataset_config["split_ratios"]
 
-    time_masks = config['time_masks']
-    filter_packet_sizes = config['filter_packet_sizes']
-    window_config = config['window_config']
-    dataset_size_max = config['dataset_size_max']
-    split_ratios = config['split_ratios']
-    dtime_max = config['dtime_max']
-    
-    slots_duration_ms = exp_config['slots_duration_ms']
-    num_slots_per_frame = exp_config['slots_per_frame']
-    total_prbs_num = exp_config['total_prbs_num']
-    symbols_per_slot = exp_config['symbols_per_slot']
-    scheduling_map_num_integers = exp_config['scheduling_map_num_integers']
-    max_num_frames = exp_config['max_num_frames']
-    scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
-    max_harq_attempts = exp_config['max_harq_attempts']
-
-    # prepare the results folder
-    results_folder_addr = folder_addr / 'link_quality' / 'pre_plots' / args.name
-    results_folder_addr.mkdir(parents=True, exist_ok=True)
-    with open(results_folder_addr / 'config.json', 'w') as f:
-        json_obj = json.dumps(config, indent=4)
-        f.write(json_obj)
+    # open the dataset in the same folder with name 'main_ds_name'
+    dataset_pickle_file = folder_addr / 'link_quality' / 'datasets' / main_ds_name / 'dataset.pkl'
+    with open(dataset_pickle_file, 'rb') as f:
+        dataset = pickle.load(f)
+    dataset_json_file = folder_addr / 'link_quality' / 'datasets' / main_ds_name / 'config.json'
+    with open(dataset_json_file, 'r') as f:
+        main_dataset_config = json.load(f)
 
     # statistics dictionary
     stats_dict = {}
 
     # data lists
     prev_end_ts = 0
-    seg_retx_num_list = np.array([])
-    seg_failed_list = np.array([])
-    seg_mcs_list = np.array([])
-    seg_num_rbs_list = np.array([])
-    seg_num_bytes_list = np.array([])
-    #frame_start_ts_list = np.array([])
-    for result_database_file, time_mask in zip(result_database_files, time_masks):
-        packet_analyzer = ULPacketAnalyzer(result_database_file)
-        sched_analyzer = ULSchedulingAnalyzer(
-            total_prbs_num = total_prbs_num, 
-            symbols_per_slot = symbols_per_slot,
-            slots_per_frame = num_slots_per_frame, 
-            slots_duration_ms = slots_duration_ms, 
-            scheduling_map_num_integers = scheduling_map_num_integers,
-            max_num_frames = max_num_frames,
-            db_addr = result_database_file
-        )
-        experiment_length_ts = packet_analyzer.last_ueip_ts - packet_analyzer.first_ueip_ts
-        logger.info(f"Total experiment duration: {(experiment_length_ts)} seconds")
+    seg_retx_num_list = []
+    seg_failed_list = []
+    seg_mcs_list = []
+    seg_num_rbs_list = []
+    seg_num_bytes_list = []
 
-        begin_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
-        end_ts = packet_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
-        logger.info(f"Filtering packet arrival events from {begin_ts} to {end_ts}, duration: {experiment_length_ts*time_mask[1]-experiment_length_ts*time_mask[0]} seconds")
+    for idx, sequence in enumerate(dataset):
+        print(f"\rProcessing sevent {idx + 1}/{len(dataset)} ({(idx + 1) / len(dataset) * 100:.2f}%)", end="")
+        event = sequence[-1]
+        if event['type_event'] != 0:
+            continue
+        if event['num_rbs'] == NUM_RBS_PADDING:
+            logger.warning(f"Padding value for num_rbs in sequence {idx}")
+            continue
+        t_mcs = event['mcs_index']
+        if t_mcs == 0:
+            t_mcs = prev_mcs
+        prev_mcs = t_mcs
 
-        # analyze packets
-        packets = packet_analyzer.figure_packettx_from_ts(begin_ts, end_ts)
-        this_db_packet_arrival_ts = []
-        #this_db_frame_start_ts = []
-        this_db_slot_num = []
-        this_db_seg_num_rbs = []
-        this_db_seg_num_bytes = []
-        this_db_seg_mcs = []
-        this_db_seg_retx_num = []
-        this_db_seg_failed = []
-        logger.info(f"Extract events for plotting")
-        prev_mcs = 0
-        for idx, packet in enumerate(packets):
-            print(f"\rProcessing packet {idx + 1}/{len(packets)} ({(idx + 1) / len(packets) * 100:.2f}%) with packet sn: {packet['sn']}", end="")
-            this_db_packet_arrival_ts.append((packet['ip.in_t']-begin_ts+prev_end_ts)*1000)
-            # add the frame start event
-            #this_db_frame_start_ts.append((sched_analyzer.find_frame_start_ts_from_ts(packet['ip.in_t'])-begin_ts+prev_end_ts)*1000)
+        t_rbs = event['num_rbs']
+        t_bytes = event['num_bytes']
+        t_num_retx = event['mretx']
+        t_failed = event['rfailed']
+        
+        seg_num_rbs_list.append(t_rbs)
+        seg_retx_num_list.append(t_num_retx)
+        seg_failed_list.append(t_failed)
+        seg_mcs_list.append(t_mcs)
+        seg_num_bytes_list.append(t_bytes)
 
-            frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
-                timestamp=packet['ip.in_t'],
-                SCHED_OFFSET_S=scheduling_time_ahead_ms/1000
-            )
-            this_db_slot_num.append(slot_num)
+        if t_mcs not in stats_dict:
+            stats_dict[t_mcs] = {
+                t_rbs: {
+                    'bytes': {},
+                    'retx': [0,0,0,0],
+                    'failed': 0,
+                    'total': 0
+                }
+            }
+        else:
+            if t_rbs not in stats_dict[t_mcs]:
+                stats_dict[t_mcs][t_rbs] = {
+                    'bytes': {},
+                    'retx': [0,0,0,0],
+                    'failed': 0,
+                    'total': 0
+                }
 
-            for idx2, rlc_attempt in enumerate(packet['rlc.attempts']):
-                t_mcs = rlc_attempt['mac.attempts'][0]['mcs']
-                if t_mcs == 0:
-                    t_mcs = prev_mcs
-                prev_mcs = t_mcs
+        if t_bytes not in stats_dict[t_mcs][t_rbs]['bytes']:
+            stats_dict[t_mcs][t_rbs]['bytes'][t_bytes] = 1
+        else:
+            stats_dict[t_mcs][t_rbs]['bytes'][t_bytes] += 1
 
-                t_rbs = rlc_attempt['mac.attempts'][0]['rbs']
-                t_bytes = rlc_attempt['len']
-                t_num_retx = len(rlc_attempt['mac.attempts'])-1
-                t_failed = int(not rlc_attempt['acked'])
-                
-                this_db_seg_num_rbs.append(t_rbs)
-                this_db_seg_retx_num.append(t_num_retx)
-                this_db_seg_failed.append(t_failed)
-                this_db_seg_mcs.append(t_mcs)
-                this_db_seg_num_bytes.append(t_bytes)
+        stats_dict[t_mcs][t_rbs]['retx'][t_num_retx] += 1
+        stats_dict[t_mcs][t_rbs]['failed'] += t_failed
+        stats_dict[t_mcs][t_rbs]['total'] += 1
 
-                if t_mcs not in stats_dict:
-                    stats_dict[t_mcs] = {
-                        t_rbs: {
-                            'bytes': {},
-                            'retx': [0,0,0,0],
-                            'failed': 0,
-                            'total': 0
-                        }
-                    }
-                else:
-                    if t_rbs not in stats_dict[t_mcs]:
-                        stats_dict[t_mcs][t_rbs] = {
-                            'bytes': {},
-                            'retx': [0,0,0,0],
-                            'failed': 0,
-                            'total': 0
-                        }
-
-                if t_bytes not in stats_dict[t_mcs][t_rbs]['bytes']:
-                    stats_dict[t_mcs][t_rbs]['bytes'][t_bytes] = 1
-                else:
-                    stats_dict[t_mcs][t_rbs]['bytes'][t_bytes] += 1
-
-                stats_dict[t_mcs][t_rbs]['retx'][t_num_retx] += 1
-                stats_dict[t_mcs][t_rbs]['failed'] += t_failed
-                stats_dict[t_mcs][t_rbs]['total'] += 1
-
-        seg_retx_num_list = np.concatenate((seg_retx_num_list, np.array(this_db_seg_retx_num)))
-        seg_failed_list = np.concatenate((seg_failed_list, np.array(this_db_seg_failed)))
-        seg_mcs_list = np.concatenate((seg_mcs_list, np.array(this_db_seg_mcs)))
-        seg_num_rbs_list = np.concatenate((seg_num_rbs_list, np.array(this_db_seg_num_rbs)))
-        seg_num_bytes_list = np.concatenate((seg_num_bytes_list, np.array(this_db_seg_num_bytes)))
-
+    print("\n", end="")
     print(stats_dict)
 
+    results_folder_addr = folder_addr / 'link_quality' / 'datasets' / main_ds_name
     with open(results_folder_addr / 'retx_stats.json', 'w') as f:
         json.dump(stats_dict, f, indent=4)
+
+
+def create_training_subdataset(args):
+    """
+    Create a training dataset
+    """
+
+    # read configuration from args.config
+    with open(args.config, 'r') as f:
+        dataset_config = json.load(f)
+    # select the source configuration
+    dataset_config = dataset_config[args.configname]
+    main_ds_name = dataset_config["main_ds_name"]
     
+
+    # read experiment configuration
+    folder_addr = Path(args.source)
+
+    # this means we have a main dataset and now we need to create training datasets
+    dataset_size = dataset_config["dataset_size_max"]
+    split_ratios = dataset_config["split_ratios"]
+
+    # open the dataset in the same folder with name 'main_ds_name'
+    dataset_pickle_file = folder_addr / 'link_quality' / 'datasets' / main_ds_name / 'dataset.pkl'
+    with open(dataset_pickle_file, 'rb') as f:
+        dataset = pickle.load(f)
+    dataset_json_file = folder_addr / 'link_quality' / 'datasets' / main_ds_name / 'config.json'
+    with open(dataset_json_file, 'r') as f:
+        main_dataset_config = json.load(f)
+
+    dataset_size = main_dataset_config["size"]
+    dataset_dim_process = main_dataset_config["dim_process"]
+    new_history_len = dataset_config["window_config"]["size"]
+
+    sub_dataset_size = dataset_config["dataset_size_max"]
+    assert sub_dataset_size <= dataset_size, "Sub dataset size must be less than or equal to the main dataset size"
+    assert new_history_len <= main_dataset_config["window_config"]["size"], "New history length must be less than or equal to the main dataset history length"
+
+    # give sub_dataset_size random numbers between 0 and dataset_size-1, they should not repeat.
+    random_indices = random.sample(range(dataset_size), sub_dataset_size)
+    random.shuffle(random_indices)
+    sub_dataset = [dataset[i][-1-new_history_len:] for i in random_indices]
+    logger.info(f"Prepared sub dataset with size {len(sub_dataset)}, saving with split ratios {split_ratios}")
+
+    # postprocess the absolute timestamps
+    for sequence in sub_dataset:
+        prev_time_since_start = sequence[0]['time_since_start']
+        for idx, event in enumerate(sequence):
+            event['idx_event'] = idx
+            if idx > 0:
+                event['time_since_start'] = event['time_since_last_event'] + prev_time_since_start
+                prev_time_since_start = event['time_since_start']
+
+    # split
+    train_num = int(len(sub_dataset)*split_ratios[0])
+    dev_num = int(len(sub_dataset)*split_ratios[1])
+    test_num = len(sub_dataset)-train_num-dev_num
+    print("train: ", train_num, " - val: ", dev_num, " - test ", test_num)
+
+    # prepare the results folder
+    results_folder_addr = folder_addr / 'link_quality' / 'datasets' / args.name
+    results_folder_addr.mkdir(parents=True, exist_ok=True)
+
+    # Save the dataset config
+    output_config = {
+        "train_size" : train_num,
+        "val_size" : dev_num,
+        "test_size" : test_num,
+        "sub_size": len(sub_dataset),
+        **main_dataset_config,
+    }
+    with open(results_folder_addr / 'config.json', 'w') as f:
+        json_obj = json.dumps(output_config, indent=4)
+        f.write(json_obj)
+
+    # train
+    train_ds = {
+        'dim_process' : int(dataset_dim_process),
+        'train' : sub_dataset[0:train_num],
+    }
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'train.pkl', 'wb') as f:
+        pickle.dump(train_ds, f)
+
+    # dev
+    dev_ds = {
+        'dim_process' : int(dataset_dim_process),
+        'dev' : sub_dataset[train_num:train_num+dev_num],
+    }
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'dev.pkl', 'wb') as f:
+        pickle.dump(dev_ds, f)
+
+    # test
+    test_ds = {
+        'dim_process' : int(dataset_dim_process),
+        'test' : sub_dataset[train_num+dev_num:-1],
+    }
+    # Save the dictionary to a pickle file
+    with open(results_folder_addr / 'test.pkl', 'wb') as f:
+        pickle.dump(test_ds, f)
+
+    return
+
 
 def create_training_dataset(args):
     """
@@ -342,10 +388,17 @@ def create_training_dataset(args):
     mcs_event_type = dataset_config.get('mcs_event_type', None)
     mcs_eval_interval_ms = dataset_config.get('mcs_eval_interval_ms', 100)
 
+    # prepare the results folder
+    results_folder_addr = folder_addr / 'link_quality' / 'datasets' / args.name
+    results_folder_addr.mkdir(parents=True, exist_ok=True)
+
+    # here we create a main dataset
+    # its name should be the same as the name in the config
+    assert dataset_config['main_ds_name'] == args.name
+
     # select the source configuration
     window_config = dataset_config['window_config']
     split_ratios = dataset_config['split_ratios']
-    dtime_max = dataset_config['dtime_max']
     slots_duration_ms = exp_config['slots_duration_ms']
     num_slots_per_frame = exp_config['slots_per_frame']
     total_prbs_num = exp_config['total_prbs_num']
@@ -449,56 +502,24 @@ def create_training_dataset(args):
 
         db_id += 1
 
-    # shuffle the dataset
-    random.shuffle(dataset)
+    logger.success(f"Number of total entries in the dataset: {len(dataset)}")
 
-    # create prefinal list of events
-    # event types: 0: retransmissions, 1: mcs change
+    # event types: 0: retransmissions, 1: mcs related event
     dim_process = 2
-    dataset_config = {
-        "dim_process": int(dim_process),
-        **dataset_config
-    }
 
-    # prepare the results folder
-    results_folder_addr = folder_addr / 'link_quality' / 'datasets' / args.name
-    results_folder_addr.mkdir(parents=True, exist_ok=True)
+    # Save the dataset config
+    dataset_config = {
+        "dim_process" : int(dim_process),
+        "size": len(dataset),
+        **dataset_config,
+    }
     with open(results_folder_addr / 'config.json', 'w') as f:
         json_obj = json.dumps(dataset_config, indent=4)
         f.write(json_obj)
 
-    logger.success(f"Number of total entries in the dataset: {len(dataset)}")
-
-    # split
-    train_num = int(len(dataset)*split_ratios[0])
-    dev_num = int(len(dataset)*split_ratios[1])
-    print("train: ", train_num, " - dev: ", dev_num)
-    # train
-    train_ds = {
-        'dim_process' : int(dim_process),
-        'train' : dataset[0:train_num],
-    }
-
     # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'train.pkl', 'wb') as f:
-        pickle.dump(train_ds, f)
-    # dev
-    dev_ds = {
-        'dim_process' : dim_process,
-        'dev' : dataset[train_num:train_num+dev_num],
-    }
-
-    # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'dev.pkl', 'wb') as f:
-        pickle.dump(dev_ds, f)
-    test_ds = {
-        'dim_process' : dim_process,
-        'test' : dataset[train_num+dev_num:-1],
-    }
-
-    # Save the dictionary to a pickle file
-    with open(results_folder_addr / 'test.pkl', 'wb') as f:
-        pickle.dump(test_ds, f)
+    with open(results_folder_addr / 'dataset.pkl', 'wb') as f:
+        pickle.dump(dataset, f)
 
 
 def extract_link_quality_events(chan_analyzer, packet_analyzer, sched_analyzer, stream_rnti, begin_ts, end_ts, exp_config, mcs_event_type, mcs_eval_interval_ms = 100):
@@ -540,7 +561,8 @@ def extract_link_quality_events(chan_analyzer, packet_analyzer, sched_analyzer, 
                 'mcs_index' : item['mcs'],
                 'rfailed' : RFAILED_PADDING,
                 'mretx' : MRETX_PADDING,
-                'num_rbs': NUM_RBS_PADDING
+                'num_rbs': NUM_RBS_PADDING,
+                'num_bytes': NUM_BYTES_PADDING,
             })
     elif mcs_event_type == 'decision':
         # needs mcs_eval_interval_ms to be set
@@ -583,7 +605,8 @@ def extract_link_quality_events(chan_analyzer, packet_analyzer, sched_analyzer, 
                 'mcs_index' : mcs_value,
                 'rfailed' : RFAILED_PADDING,
                 'mretx' : MRETX_PADDING,
-                'num_rbs': NUM_RBS_PADDING
+                'num_rbs': NUM_RBS_PADDING,
+                'num_bytes': NUM_BYTES_PADDING,
             })
 
     if mcs_event_type is not None:
@@ -621,6 +644,7 @@ def extract_link_quality_events(chan_analyzer, packet_analyzer, sched_analyzer, 
                     'rfailed': rfailed,
                     'mretx': mretx,
                     'num_rbs': num_rbs,
+                    'num_bytes' : num_bytes
                 }
             )
     print("\n", end="")

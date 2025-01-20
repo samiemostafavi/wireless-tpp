@@ -155,6 +155,19 @@ class EventTokenizer:
         self.truncation_side = config.pop("truncation_side", self.truncation_side)
         self.model_input_names = config.pop("model_input_names", self.model_input_names)
 
+        self.model_input_pads = {
+            'delta_time_seqs': -1.0,
+            'time_seqs': -1.0,
+            'slot_seqs': 20,
+            'len_seqs': -1.0,
+            'mcs_seqs': 29,
+            'mretx_seqs': 4,
+            'rfailed_seqs': 2,
+            'num_rbs_seqs': 106, 
+            'interarrival_time_seqs': -1.0,
+            'label_mask_seqs': 0,
+        }
+
     def _get_padding_truncation_strategies(
             self, padding=False, truncation=None, max_length=None, verbose=False, **kwargs
     ):
@@ -392,38 +405,88 @@ class EventTokenizer:
         batch_output = dict()
 
         if needs_to_be_padded:
-            # time seqs
-            batch_output[self.model_input_names[0]] = self.make_pad_sequence(encoded_inputs[self.model_input_names[0]],
-                                                                             self.pad_token_id,
+
+            if 'slot_seqs' in self.model_input_names:
+                batch_output['slot_seqs'] = self.make_pad_sequence(encoded_inputs['slot_seqs'],
+                                                                                self.model_input_pads['slot_seqs'],
+                                                                                padding_side=self.padding_side,
+                                                                                max_len=max_length)
+            if 'len_seqs' in self.model_input_names:
+                batch_output['len_seqs'] = self.make_pad_sequence(encoded_inputs['len_seqs'],
+                                                                                self.model_input_pads['len_seqs'],
+                                                                                padding_side=self.padding_side,
+                                                                                max_len=max_length)
+                
+            if 'mcs_seqs' in self.model_input_names:
+                batch_output['mcs_seqs'] = self.make_pad_sequence(encoded_inputs['mcs_seqs'],
+                                                                                self.model_input_pads['mcs_seqs'],
+                                                                                padding_side=self.padding_side,
+                                                                                max_len=max_length)
+            
+            if 'mretx_seqs' in self.model_input_names:
+                batch_output['mretx_seqs'] = self.make_pad_sequence(encoded_inputs['mretx_seqs'],
+                                                                                self.model_input_pads['mretx_seqs'],
+                                                                                padding_side=self.padding_side,
+                                                                                max_len=max_length)
+                
+            if 'rfailed_seqs' in self.model_input_names:
+                batch_output['rfailed_seqs'] = self.make_pad_sequence(encoded_inputs['rfailed_seqs'],
+                                                                                self.model_input_pads['rfailed_seqs'],
+                                                                                padding_side=self.padding_side,
+                                                                                max_len=max_length)
+                
+            if 'num_rbs_seqs' in self.model_input_names:
+                batch_output['num_rbs_seqs'] = self.make_pad_sequence(encoded_inputs['num_rbs_seqs'],
+                                                                                self.model_input_pads['num_rbs_seqs'],
+                                                                                padding_side=self.padding_side,
+                                                                                max_len=max_length)
+
+            # time_seqs
+            batch_output['time_seqs'] = self.make_pad_sequence(encoded_inputs['time_seqs'],
+                                                                             self.model_input_pads['time_seqs'],
                                                                              padding_side=self.padding_side,
                                                                              max_len=max_length)
-            # time_delta seqs
-            batch_output[self.model_input_names[1]] = self.make_pad_sequence(encoded_inputs[self.model_input_names[1]],
-                                                                             self.pad_token_id,
+            # time_delta_seqs
+            batch_output['time_delta_seqs'] = self.make_pad_sequence(encoded_inputs['time_delta_seqs'],
+                                                                             self.model_input_pads['delta_time_seqs'],
                                                                              padding_side=self.padding_side,
                                                                              max_len=max_length)
             # type_seqs
-            batch_output[self.model_input_names[2]] = self.make_pad_sequence(encoded_inputs[self.model_input_names[2]],
+            batch_output['type_seqs'] = self.make_pad_sequence(encoded_inputs['type_seqs'],
                                                                              self.pad_token_id,
                                                                              padding_side=self.padding_side,
                                                                              max_len=max_length,
                                                                              dtype=np.int64)
+
+            if 'interarrival_time_seqs' in self.model_input_names:
+                batch_output['interarrival_time_seqs'] = self.make_pad_sequence(encoded_inputs['interarrival_time_seqs'],
+                                                                                self.model_input_pads['interarrival_time_seqs'],
+                                                                                padding_side=self.padding_side,
+                                                                                max_len=max_length)
+
+            if 'label_mask_seqs' in self.model_input_names:
+                batch_output['label_mask_seqs'] = self.make_pad_sequence(encoded_inputs['label_mask_seqs'],
+                                                                                self.model_input_pads['label_mask_seqs'],
+                                                                                padding_side=self.padding_side,
+                                                                                max_len=max_length)
+
+
         else:
             batch_output = encoded_inputs
 
         # non_pad_mask; replaced the use of event types by using the original sequence length
-        seq_pad_mask = np.full_like(batch_output[self.model_input_names[2]], fill_value=True, dtype=bool)
+        seq_pad_mask = np.full_like(batch_output['type_seqs'], fill_value=True, dtype=bool)
         for i, seq_len in enumerate(seq_lens):
             seq_pad_mask[i, seq_len:] = False
-        batch_output[self.model_input_names[3]] = seq_pad_mask
+        batch_output['batch_non_pad_mask'] = seq_pad_mask
 
         if return_attention_mask:
             # attention_mask
-            batch_output[self.model_input_names[4]] = self.make_attn_mask_for_pad_sequence(
-                np.array(batch_output[self.model_input_names[2]]),
+            batch_output['attention_mask'] = self.make_attn_mask_for_pad_sequence(
+                np.array(batch_output['type_seqs']),
                 self.pad_token_id)
         else:
-            batch_output[self.model_input_names[4]] = []
+            batch_output['attention_mask'] = []
 
         return batch_output
 

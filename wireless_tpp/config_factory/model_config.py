@@ -13,6 +13,7 @@ class TrainerConfig(Config):
         self.max_epoch = kwargs.get('max_epoch', 10)
         self.shuffle = kwargs.get('shuffle', False)
         self.optimizer = kwargs.get('optimizer', 'adam')
+        self.weight_decay = kwargs.get('weight_decay', 1.e-4)
         self.learning_rate = kwargs.get('learning_rate', 1.e-3)
         self.valid_freq = kwargs.get('valid_freq', 1)
         self.use_tfb = kwargs.get('use_tfb', False)
@@ -30,6 +31,7 @@ class TrainerConfig(Config):
                 'max_epoch': self.max_epoch,
                 'shuffle': self.shuffle,
                 'optimizer': self.optimizer,
+                'weight_decay': self.weight_decay,
                 'learning_rate': self.learning_rate,
                 'valid_freq': self.valid_freq,
                 'use_tfb': self.use_tfb,
@@ -58,6 +60,7 @@ class TrainerConfig(Config):
                              max_epoch=self.max_epoch,
                              shuffle=self.shuffle,
                              optimizer=self.optimizer,
+                             weight_decay=self.weight_decay,
                              learning_rate=self.learning_rate,
                              valid_freq=self.valid_freq,
                              use_tfb=self.use_tfb,
@@ -221,6 +224,7 @@ class ModelConfig(Config):
                 'hidden_size': self.hidden_size,
                 'time_emb_size': self.time_emb_size,
                 'num_layers': self.num_layers,
+                'num_heads': self.num_heads,
                 'sharing_param_layer': self.sharing_param_layer,
                 'loss_integral_num_sample_per_step': self.loss_integral_num_sample_per_step,
                 'dropout_rate': self.dropout_rate,
@@ -259,6 +263,7 @@ class ModelConfig(Config):
                            hidden_size=self.hidden_size,
                            time_emb_size=self.time_emb_size,
                            num_layers=self.num_layers,
+                           num_heads=self.num_heads,
                            sharing_param_layer=self.sharing_param_layer,
                            loss_integral_num_sample_per_step=self.loss_integral_num_sample_per_step,
                            dropout_rate=self.dropout_rate,

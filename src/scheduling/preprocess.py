@@ -569,25 +569,20 @@ def create_training_subdataset(args):
         dataset_config = json.load(f)
     # select the source configuration
     dataset_config = dataset_config[args.configname]
+    main_ds_name = dataset_config["main_ds_name"]
 
     # read experiment configuration
     folder_addr = Path(args.source)
-    # find all .db files in the folder
-    db_files = list(folder_addr.glob("*.db"))
-    if not db_files:
-        logger.error("No database files found in the specified folder.")
-        return
-    result_database_files = [str(db_file) for db_file in db_files]
 
     # this means we have a main dataset and now we need to create training datasets
     dataset_size = dataset_config["dataset_size_max"]
     split_ratios = dataset_config["split_ratios"]
 
     # open the dataset in the same folder with name "main"
-    dataset_pickle_file = folder_addr / 'scheduling' / 'datasets' / 'main' / 'dataset.pkl'
+    dataset_pickle_file = folder_addr / 'scheduling' / 'datasets' / main_ds_name / 'dataset.pkl'
     with open(dataset_pickle_file, 'rb') as f:
         dataset = pickle.load(f)
-    dataset_json_file = folder_addr / 'scheduling' / 'datasets' / 'main' / 'config.json'
+    dataset_json_file = folder_addr / 'scheduling' / 'datasets' / main_ds_name / 'config.json'
     with open(dataset_json_file, 'r') as f:
         main_dataset_config = json.load(f)
 
@@ -665,6 +660,11 @@ def create_training_dataset(args):
         dataset_config = json.load(f)
     # select the source configuration
     dataset_config = dataset_config[args.configname]
+
+
+    # here we create a main dataset
+    # its name should be the same as the name in the config
+    assert dataset_config['main_ds_name'] == args.name
 
     # read experiment configuration
     folder_addr = Path(args.source)

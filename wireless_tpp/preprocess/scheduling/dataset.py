@@ -18,11 +18,11 @@ class TPPDatasetScheduling(BaseTPPDataset):
         self.mretx_seqs = self.data_dict['mretx_seqs']
         self.rfailed_seqs = self.data_dict['rfailed_seqs']
         self.num_rbs_seqs = self.data_dict['num_rbs_seqs']
-
-        # default keys
         self.time_seqs = self.data_dict['time_seqs']
         self.time_delta_seqs = self.data_dict['time_delta_seqs']
         self.type_seqs = self.data_dict['type_seqs']
+        self.interarrival_time_seqs = self.data_dict['interarrival_time_seqs']
+        self.label_mask_seqs = self.data_dict['label_mask_seqs']
 
     def __len__(self):
         """
@@ -38,7 +38,9 @@ class TPPDatasetScheduling(BaseTPPDataset):
             len(self.rfailed_seqs) == len(self.time_seqs) and 
             len(self.num_rbs_seqs) == len(self.time_seqs) and 
             len(self.time_seqs) == len(self.type_seqs) and 
-            len(self.time_delta_seqs) == len(self.type_seqs),
+            len(self.time_delta_seqs) == len(self.type_seqs) and
+            len(self.interarrival_time_seqs) == len(self.type_seqs) and
+            len(self.label_mask_seqs) == len(self.type_seqs),
             ValueError,
             f"Inconsistent lengths for data! time_seq_len:{len(self.time_seqs)}, event_len: "
             f"{len(self.type_seqs)}, time_delta_seq_len: {len(self.time_delta_seqs)}"
@@ -65,7 +67,9 @@ class TPPDatasetScheduling(BaseTPPDataset):
                 'num_rbs_seqs': self.num_rbs_seqs[idx],
                 'time_seqs': self.time_seqs[idx], 
                 'time_delta_seqs': self.time_delta_seqs[idx],
-                'type_seqs': self.type_seqs[idx]
+                'type_seqs': self.type_seqs[idx],
+                'interarrival_time_seqs': self.interarrival_time_seqs[idx],
+                'label_mask_seqs': self.label_mask_seqs[idx]
             }
         )
 
@@ -92,6 +96,10 @@ class TPPDatasetScheduling(BaseTPPDataset):
             val_seqs = self.rfailed_seqs
         elif inp_type == 'num_rbs_seqs':
             val_seqs = self.num_rbs_seqs
+        elif inp_type == 'interarrival_time_seqs':
+            val_seqs = self.interarrival_time_seqs
+        elif inp_type == 'label_mask_seqs':
+            val_seqs = self.label_mask_seqs
         else:
             raise ValueError(f"Invalid input type: {inp_type}")
 
@@ -118,6 +126,8 @@ class TPPDatasetScheduling(BaseTPPDataset):
                     if mark > 0:
                         filtered_vals.append(val)
                         filtered_marks.append(mark)
+            if len(filtered_vals) == 0 or len(filtered_marks) == 0:
+                continue
             vals = np.array(filtered_vals)
             marks = np.array(filtered_marks)
             min_val = min(min_val, vals.min())
