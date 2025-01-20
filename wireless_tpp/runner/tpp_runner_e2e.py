@@ -388,13 +388,17 @@ class TPPRunnerE2E():
         total_dtime_error = 0
         total_num_event = 0
         total_dtime_var = 0
+        sum_70 = 0.0
+        sum_90 = 0.0
+        sum_99 = 0.0
+        sum_999 = 0.0
         epoch_label = []
         epoch_pred = []
         epoch_pred_var = []
         metrics_dict = OrderedDict()
 
         for batch in data_loader:
-            batch_loss, batch_num_event, batch_pred, batch_label, batch_mask, _, _, batch_pred_var = \
+            batch_loss, batch_num_event, batch_pred, batch_label, batch_mask, _, _, batch_pred_var, batch_pred_quantile = \
                 self.model_wrapper.run_batch_mdn(batch, phase=phase)
             total_loss += batch_loss
             total_num_event += batch_num_event
@@ -405,11 +409,18 @@ class TPPRunnerE2E():
                     "Shapes of batch_label, batch_pred, batch_pred_var, must be the same {} {} {}".format(
                         batch_label[0].shape, batch_pred[0].shape, batch_pred_var[0].shape
                     )
-                if batch_mask is not None:
-                    assert batch_mask.shape == batch_label[0].shape
-                    tmp = np.array(abs(batch_label[0] - batch_pred[0]))*batch_mask
-                    total_dtime_error += sum(sum(tmp))
+                assert batch_mask.shape == batch_label[0].shape
+                tmp = np.array(abs(batch_label[0] - batch_pred[0]))*batch_mask
+                total_dtime_error += sum(sum(tmp))
                 total_dtime_var += sum(sum(np.array(batch_pred_var[0])))
+                batch_pred_q7 = batch_pred_quantile[0]
+                batch_pred_q9 = batch_pred_quantile[1]
+                batch_pred_q99 = batch_pred_quantile[2]
+                batch_pred_q999 = batch_pred_quantile[3]
+                sum_70 += (np.array(batch_label[0]) <= np.array(batch_pred_q7)).sum()
+                sum_90 += (np.array(batch_label[0]) <= np.array(batch_pred_q9)).sum()
+                sum_99 += (np.array(batch_label[0]) <= np.array(batch_pred_q99)).sum()
+                sum_999 += (np.array(batch_label[0]) <= np.array(batch_pred_q999)).sum()
                 epoch_pred.append(batch_pred)
                 epoch_pred_var.append(batch_pred_var)
                 epoch_label.append(batch_label)
@@ -428,9 +439,13 @@ class TPPRunnerE2E():
 
         # calc errors
         if phase == RunnerPhase.VALIDATE or phase == RunnerPhase.EVALUATE:
+            coverage_70 = sum_70 / total_num_event
+            coverage_90 = sum_90 / total_num_event
+            coverage_99 = sum_99 / total_num_event
+            coverage_999 = sum_999 / total_num_event
             avg_dtime_error = total_dtime_error / total_num_event
             avg_dtime_var = total_dtime_var / total_num_event
-            metrics_dict.update({'dtime_mae': avg_dtime_error, 'dtime_var': avg_dtime_var})
+            metrics_dict.update({'dtime_mae': avg_dtime_error, 'dtime_var': avg_dtime_var, 'coverage_70': coverage_70, 'coverage_90': coverage_90, 'coverage_99': coverage_99, 'coverage_999': coverage_999})
 
         if phase == RunnerPhase.PREDICT:
             metrics_dict.update({'pred': epoch_pred, 'label': epoch_label})

@@ -15,10 +15,10 @@ from wireless_tpp.model.link_quality.single_step_retx import SingleStepRETXPrior
 # scheduling prediction models
 from wireless_tpp.model.scheduling.single_step_sched import SingleStepScheduling
 
-from wireless_tpp.model.e2e.transformer_e2e import TransformerE2E
-from wireless_tpp.model.e2e.timevar_rnn_e2e import TimeVarHalfRecurrentE2E, TimeVarRecurrentE2E
-from wireless_tpp.model.e2e.rnn_e2e import RecurrentE2E
-from wireless_tpp.model.e2e.mlp_e2e import MLPE2E
+from wireless_tpp.model.e2e_delay.transformer_e2e import TransformerE2E
+from wireless_tpp.model.e2e_delay.timevar_rnn_e2e import TimeVarHalfRecurrentE2E, TimeVarRecurrentE2E
+from wireless_tpp.model.e2e_delay.rnn_e2e import RecurrentE2E
+from wireless_tpp.model.e2e_delay.mlp_e2e import MLPE2E
 
 
 __all__ = ['TorchBaseModel',

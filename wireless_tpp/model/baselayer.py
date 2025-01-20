@@ -4,6 +4,26 @@ import torch
 from torch import nn
 
 
+class FeedForwardBlock(nn.Module):
+    def __init__(self, dim_in, dim_hidden, device, dropout):
+        super().__init__()
+        self.linear1 = nn.Linear(dim_in, dim_hidden, device = device)
+        self.linear2 = nn.Linear(dim_hidden, dim_in, device = device)
+        self.norm = nn.LayerNorm(dim_in, device = device)
+        self.dropout = nn.Dropout(dropout)
+        self.activation = nn.GELU()  # So important, much better than ReLU
+
+    def forward(self, x):
+        # pre-norm style
+        out = self.norm(x)
+        out = self.linear1(out)
+        out = self.activation(out)
+        out = self.dropout(out)
+        out = self.linear2(out)
+        out = self.dropout(out)
+        return x + out  # residual skip
+
+
 def attention(query, key, value, mask=None, dropout=None):
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
