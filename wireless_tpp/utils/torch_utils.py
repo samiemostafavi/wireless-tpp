@@ -37,7 +37,7 @@ def set_device(gpu=-1):
     return device
 
 
-def set_optimizer(optimizer, params, lr):
+def set_optimizer(optimizer, params, lr, weight_decay=None):
     """Setup the optimizer.
 
     Args:
@@ -56,7 +56,10 @@ def set_optimizer(optimizer, params, lr):
         if optimizer.lower() == "adam":
             optimizer = "Adam"
     try:
-        optimizer = getattr(torch.optim, optimizer)(params, lr=lr)
+        if weight_decay is not None:
+            optimizer = getattr(torch.optim, optimizer)(params, lr=lr, weight_decay=weight_decay)
+        else:
+            optimizer = getattr(torch.optim, optimizer)(params, lr=lr)
     except Exception:
         raise NotImplementedError("optimizer={} is not supported.".format(optimizer))
     return optimizer

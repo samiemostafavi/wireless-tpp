@@ -39,6 +39,8 @@ class SingleStepMCS(TorchBaseModel):
         self.include_rfailed = model_config.model_specs['history']['include_rfailed']
         self.rfailed_emb_dim = model_config.model_specs['embeddings']['rfailed_emb_dim'] if self.concat_embeddings else self.d_model
 
+        self.time_noise_std = model_config.model_specs['history']['time_noise_std']
+
         self.pooling = model_config.model_specs['pooling']['type']
 
         if self.concat_embeddings:
@@ -125,7 +127,7 @@ class SingleStepMCS(TorchBaseModel):
             nn.ReLU(),
             nn.Linear(self.d_model * 2, self.d_model)
         )
-
+        print(self.n_head, self.d_model, self.dropout, self.his_len)
         # Transformer layers (self.stack_layers)
         self.stack_layers = nn.ModuleList(
             [EncoderLayer(
@@ -268,6 +270,10 @@ class SingleStepMCS(TorchBaseModel):
         dtime_seqs = dtime_seqs[:, -1 -self.his_len:]
         batch_non_pad_mask = batch_non_pad_mask[:, -1 -self.his_len:]
 
+        # add noise to time_seqs to avoid overfitting
+        if self.time_noise_std > 0:
+            time_seqs[:, :-1] = time_seqs[:, :-1] + torch.normal(mean=0.0, std=self.time_noise_std, size=time_seqs[:, :-1].size(), device=self.device)
+
         # 1. compute event-loglik
         # [batch_size, seq_len, hidden_size]
         enc_out = self.forward(
@@ -357,8 +363,11 @@ class SingleStepMCS(TorchBaseModel):
         pred_var = torch.sum(mcs_dist.probs * (indices ** 2), dim=-1, keepdim=True) - pred_mcs ** 2  # [batch_size, 1]
         # output shape here is [batch_size, 1, 1]
 
+        # prepare one to last mcs for evaluation
+        one_to_last_mcs = mcs_seqs[:, -2:-1]
+
         num_events = event_mask.sum().item()
-        return (pred_mcs[...,0,0],pred_var[...,0,0]), (None, None), (label_mcs[...,0], None), event_mask[...,0], num_events
+        return (pred_mcs[...,0,0],pred_var[...,0,0]), (None, None), (label_mcs[...,0], one_to_last_mcs[...,0]), event_mask[...,0], num_events
 
 
     def predict_probabilities(self, batch, prediction_config, forward=False):

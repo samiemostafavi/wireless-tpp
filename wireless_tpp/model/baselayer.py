@@ -122,6 +122,79 @@ class EncoderLayer(nn.Module):
                 return x
 
 
+class DecoderLayer(nn.Module):
+    def __init__(self, d_model, self_attn, cross_attn=None, feed_forward=None,
+                 use_residual=False, dropout=0.1):
+        """
+        Args:
+            d_model (int): Hidden size of the model.
+            self_attn (nn.Module): The self-attention sub-layer for the decoder (usually MultiHeadAttention).
+            cross_attn (nn.Module): The cross-attention sub-layer (attending encoder outputs).
+            feed_forward (nn.Module): The feed-forward sub-layer (optional).
+            use_residual (bool): Whether to use residual connections via SublayerConnection.
+            dropout (float): Dropout probability.
+        """
+        super(DecoderLayer, self).__init__()
+        self.d_model = d_model
+        self.self_attn = self_attn
+        self.cross_attn = cross_attn
+        self.feed_forward = feed_forward
+        self.use_residual = use_residual
+
+        if self.use_residual:
+            # We have up to three sublayers:
+            #   1) Masked self-attention
+            #   2) Cross-attention (encoder-decoder attention)
+            #   3) Feed-forward
+            # Each sublayer is wrapped with SublayerConnection for residual + layer norm.
+            self.sublayers = nn.ModuleList(
+                [SublayerConnection(d_model, dropout) for _ in range(3)]
+            )
+
+    def forward(self, x, memory, tgt_mask=None, mask_2d=None):
+        """
+        Args:
+            x (Tensor): Decoder input of shape [batch_size, tgt_seq_len, d_model].
+            memory (Tensor): Encoder output of shape [batch_size, src_seq_len, d_model].
+            tgt_mask (Tensor, optional): Mask for the target sequence (usually for preventing 
+                                         attention to future tokens). Shape [batch_size, tgt_seq_len, tgt_seq_len].
+            mask_2d (Tensor, optional): Mask for the encoder outputs and the target sequence attention
+                                            Shape [batch_size, tgt_seq_len, src_seq_len].
+        Returns:
+            Tensor: Output of the decoder layer, shape [batch_size, tgt_seq_len, d_model].
+        """
+
+        if self.use_residual:
+            # 1) Masked self-attention
+            x = self.sublayers[0](
+                x, 
+                lambda _x: self.self_attn(_x, _x, _x, tgt_mask)
+            )
+            # 2) Cross-attention (encoder-decoder). Only if cross_attn is provided
+            if self.cross_attn is not None:
+                x = self.sublayers[1]( 
+                    x, 
+                    lambda _x: self.cross_attn(_x, memory, memory, mask_2d)
+                )
+            # 3) Feed-forward sub-layer (if provided)
+            if self.feed_forward is not None:
+                x = self.sublayers[2](x, self.feed_forward)
+
+        else:
+            # If not using residual connections:
+            # 1) Masked self-attention
+            x = self.self_attn(x, x, x, tgt_mask)
+
+            # 2) Cross-attention
+            if self.cross_attn is not None:
+                x = self.cross_attn(x, memory, memory, mask_2d)
+
+            # 3) Feed-forward
+            if self.feed_forward is not None:
+                x = self.feed_forward(x)
+        return x
+
+
 class TimePositionalEncoding(nn.Module):
     """Temporal encoding in THP, ICML 2020
     """
@@ -291,3 +364,45 @@ class DNN(nn.Module):
             fc = self.dropout(fc)
             deep_input = fc
         return deep_input
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000, device='cpu'):
+        """
+        Args:
+            d_model (int): Embedding dimension of each token (same as the model dimension).
+            dropout (float): Dropout probability.
+            max_len (int): Maximum sequence length you expect.
+        """
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        # Create a long enough 'pe' matrix of shape [max_len, d_model].
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float, device=device).unsqueeze(1)  # [max_len, 1]
+        # The original paper's formula for the frequencies.
+        div_term = torch.exp(torch.arange(0, d_model, 2, device=device).float() * (-math.log(10000.0) / d_model))
+        
+        pe[:, 0::2] = torch.sin(position * div_term)  # even indices
+        pe[:, 1::2] = torch.cos(position * div_term)  # odd indices
+
+        # Add a batch dimension at the front so pe can be added directly to [B, T, d_model]
+        pe = pe.unsqueeze(0)  # shape: [1, max_len, d_model]
+
+        # register_buffer => "pe" is not a learnable parameter, 
+        # but still a persistent buffer in the module.
+        self.register_buffer('pe', pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: [batch_size, seq_len, d_model]
+        Returns:
+            [batch_size, seq_len, d_model]
+        """
+        seq_len = x.size(1)
+        
+        # Add positional encoding up to seq_len
+        # self.pe[:, :seq_len, :] => shape [1, seq_len, d_model]
+        x = x + self.pe[:, :seq_len]
+        return self.dropout(x)

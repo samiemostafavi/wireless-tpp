@@ -719,16 +719,6 @@ class SingleStepRETXPriorCond(TorchBaseModel):
         """
         time_seqs, dtime_seqs, type_seqs, mcs_seqs, num_rbs_seqs, mretx_seqs, rfailed_seqs, batch_non_pad_mask, attention_mask = batch
 
-        # only consider the last self.his_len events in the history
-        num_rbs_seqs = num_rbs_seqs[:, -1 -self.his_len:]
-        mcs_seqs = mcs_seqs[:, -1 -self.his_len:]
-        mretx_seqs = mretx_seqs[:, -1 -self.his_len:]
-        rfailed_seqs = rfailed_seqs[:, -1 -self.his_len:]
-        time_seqs = time_seqs[:, -1 -self.his_len:]
-        attention_mask = attention_mask[:, -1 -self.his_len:, -1 -self.his_len:]
-        dtime_seqs = dtime_seqs[:, -1 -self.his_len:]
-        batch_non_pad_mask = batch_non_pad_mask[:, -1 -self.his_len:]
-
         # input: [batch_size, 1, hidden_size]
         enc_cond_out = self.forward_cond(
             num_rbs_seqs[:, -1:], #label num_rbs (condition)
@@ -769,16 +759,6 @@ class SingleStepRETXPriorCond(TorchBaseModel):
             tuple: tensors of dtime and type prediction, [batch_size, seq_len].
         """
         time_seqs, dtime_seqs, type_seqs, mcs_seqs, num_rbs_seqs, mretx_seqs, rfailed_seqs, batch_non_pad_mask, attention_mask = batch
-
-        # only consider the last self.his_len events in the history
-        num_rbs_seqs = num_rbs_seqs[:, -1 -self.his_len:]
-        mcs_seqs = mcs_seqs[:, -1 -self.his_len:]
-        mretx_seqs = mretx_seqs[:, -1 -self.his_len:]
-        rfailed_seqs = rfailed_seqs[:, -1 -self.his_len:]
-        time_seqs = time_seqs[:, -1 -self.his_len:]
-        attention_mask = attention_mask[:, -1 -self.his_len:, -1 -self.his_len:]
-        dtime_seqs = dtime_seqs[:, -1 -self.his_len:]
-        batch_non_pad_mask = batch_non_pad_mask[:, -1 -self.his_len:]
 
         # input: [batch_size, 1, hidden_size]
         enc_cond_out = self.forward_cond(
@@ -826,16 +806,6 @@ class SingleStepRETXPriorCond(TorchBaseModel):
         """
         time_seqs, dtime_seqs, type_seqs, mcs_seqs, num_rbs_seqs, mretx_seqs, rfailed_seqs, batch_non_pad_mask, attention_mask = batch
 
-        # only consider the last self.his_len events in the history
-        num_rbs_seqs = num_rbs_seqs[:, -1 -self.his_len:]
-        mcs_seqs = mcs_seqs[:, -1 -self.his_len:]
-        mretx_seqs = mretx_seqs[:, -1 -self.his_len:]
-        rfailed_seqs = rfailed_seqs[:, -1 -self.his_len:]
-        time_seqs = time_seqs[:, -1 -self.his_len:]
-        attention_mask = attention_mask[:, -1 -self.his_len:, -1 -self.his_len:]
-        dtime_seqs = dtime_seqs[:, -1 -self.his_len:]
-        batch_non_pad_mask = batch_non_pad_mask[:, -1 -self.his_len:]
-
         # input: [batch_size, 1, hidden_size]
         enc_cond_out = self.forward_cond(
             num_rbs_seqs[:, -1:], #label num_rbs (condition)
@@ -871,16 +841,6 @@ class SingleStepRETXPriorCond(TorchBaseModel):
             tuple: tensors of dtime and type prediction, [batch_size, seq_len].
         """
         time_seqs, dtime_seqs, type_seqs, mcs_seqs, num_rbs_seqs, mretx_seqs, rfailed_seqs, batch_non_pad_mask, attention_mask = batch
-
-        # only consider the last self.his_len events in the history
-        num_rbs_seqs = num_rbs_seqs[:, -1 -self.his_len:]
-        mcs_seqs = mcs_seqs[:, -1 -self.his_len:]
-        mretx_seqs = mretx_seqs[:, -1 -self.his_len:]
-        rfailed_seqs = rfailed_seqs[:, -1 -self.his_len:]
-        time_seqs = time_seqs[:, -1 -self.his_len:]
-        attention_mask = attention_mask[:, -1 -self.his_len:, -1 -self.his_len:]
-        dtime_seqs = dtime_seqs[:, -1 -self.his_len:]
-        batch_non_pad_mask = batch_non_pad_mask[:, -1 -self.his_len:]
 
         # input: [batch_size, 1, hidden_size]
         enc_cond_out = self.forward_cond(
