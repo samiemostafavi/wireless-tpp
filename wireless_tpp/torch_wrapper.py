@@ -127,7 +127,10 @@ class TorchModelWrapper:
             loss, num_event, dtime_loss, len_loss = self.model.loglike_loss(batch, forward=is_training)
 
         # Assume we dont do prediction on train set
-        pred_dtime, pred_len, pred_dtime_var, pred_len_var, label_dtime, label_len, mask, num_events = None, None, None, None, None, None, None, None
+        pred_dtime, pred_len, pred_dtime_var, pred_len_var, label_dtime, label_len, pred_q7, pred_q9, pred_q99, pred_q999, mask, num_events = None, None, None, None, None, None, None, None, None, None, None, None
+
+        dtime_loss = dtime_loss.item() if dtime_loss is not None else None
+        len_loss = len_loss.item() if len_loss is not None else None
 
         # update grad
         if is_training:
@@ -140,27 +143,21 @@ class TorchModelWrapper:
             #self.model.eval()
             with torch.no_grad():
                 (pred_dtime, pred_dtime_var), (pred_len, pred_len_var), \
-                    (label_dtime, label_len), event_mask, num_events = self.model.predict_mean_variance(batch=batch)
-                if pred_len is None and pred_len_var is None and label_len is None:
-                    pred_dtime = pred_dtime.detach().cpu().numpy()
-                    pred_dtime_var = pred_dtime_var.detach().cpu().numpy()
-                    label_dtime = label_dtime.detach().cpu().numpy()
-                    if event_mask is not None: 
-                        mask = event_mask.detach().cpu().numpy()
-                else:
-                    pred_dtime = pred_dtime.detach().cpu().numpy()
-                    pred_dtime_var = pred_dtime_var.detach().cpu().numpy()
-                    pred_len = pred_len.detach().cpu().numpy()
-                    pred_len_var = pred_len_var.detach().cpu().numpy()
-                    label_dtime = label_dtime.detach().cpu().numpy()
-                    label_len = label_len.detach().cpu().numpy()
-                    mask = event_mask.detach().cpu().numpy()
+                    (label_dtime, label_len), (pred_q7, pred_q9, pred_q99, pred_q999), event_mask, num_events = self.model.predict_mean_variance(batch=batch)
 
-        if dtime_loss is not None and len_loss is not None:
-            return loss.item(), num_event, (pred_dtime, pred_len), (label_dtime, label_len), mask, dtime_loss.item(), len_loss.item(), (pred_dtime_var, pred_len_var)
-        else:
-            # e2e model
-            return loss.item(), num_event, (pred_dtime, pred_len), (label_dtime, label_len), mask, None, None, (pred_dtime_var, pred_len_var)
+                pred_dtime = pred_dtime.detach().cpu().numpy() if pred_dtime is not None else None
+                pred_dtime_var = pred_dtime_var.detach().cpu().numpy() if pred_dtime_var is not None else None
+                pred_len = pred_len.detach().cpu().numpy() if pred_len is not None else None
+                pred_len_var = pred_len_var.detach().cpu().numpy() if pred_len_var is not None else None
+                label_dtime = label_dtime.detach().cpu().numpy() if label_dtime is not None else None
+                pred_q7 = pred_q7.detach().cpu().numpy() if pred_q7 is not None else None
+                pred_q9 = pred_q9.detach().cpu().numpy() if pred_q9 is not None else None
+                pred_q99 = pred_q99.detach().cpu().numpy() if pred_q99 is not None else None
+                pred_q999 = pred_q999.detach().cpu().numpy() if pred_q999 is not None else None
+                label_len = label_len.detach().cpu().numpy() if label_len is not None else None
+                mask = event_mask.detach().cpu().numpy() if event_mask is not None else None
+
+        return loss.item(), num_event, (pred_dtime, pred_len), (label_dtime, label_len), mask, None, None, (pred_dtime_var, pred_len_var), (pred_q7, pred_q9, pred_q99, pred_q999)
 
             
 

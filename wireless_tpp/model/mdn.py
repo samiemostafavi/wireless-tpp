@@ -115,6 +115,16 @@ class NormalMixtureDistribution(TransformedDistribution):
             return self.base_dist.log_cdf(x)
         
     @property
+    def locs(self):
+        return self.base_dist.component_distribution.loc
+    @property
+    def scales(self):
+        return self.base_dist.component_distribution.scale
+    @property
+    def weights(self):
+        return torch.softmax(self.base_dist.mixture_distribution.logits, dim=-1)
+    
+    @property
     def mean(self):
         """
         Returns the mean of the distribution in the *transformed* (observed) space.
