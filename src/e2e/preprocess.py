@@ -614,8 +614,8 @@ def create_fulltf_training_subdataset(args):
         db_name = db_dataset_dict['dataset_name']
         db_dataset = db_dataset_dict['dataset']
         # filter broken databases
-        if db_name in [ 'database_s60.db', 'database_s64.db' ]:
-            continue
+        #if db_name in [ 'database_s60.db', 'database_s64.db' ]:
+        #    continue
         logger.info(f"Processing database {db_id}, dataset size: {db_dataset_dict['size']}, arrivals number: {db_dataset_dict['arrivals_num']}")
 
         # apply windowing to the dataset

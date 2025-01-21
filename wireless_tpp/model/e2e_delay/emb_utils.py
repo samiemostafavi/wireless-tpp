@@ -291,6 +291,7 @@ class DelayEmbedding(nn.Module):
 
         # only linear ones need unsqueeze
         # convert type_seqs to int type for embedding
+        interarrival_time = interarrival_time.float()
         slot = slot.long()
         mcs = mcs.long()
         mretx = mretx.long()
@@ -301,7 +302,7 @@ class DelayEmbedding(nn.Module):
         features_emb = []
 
         if self.include_dtime_embedding:
-            dtime_enc = self.dtime_emb_layer(dtime.unsqueeze(-1))
+            dtime_enc = self.dtime_emb_layer(dtime.float().unsqueeze(-1))
             embeddings_sum += dtime_enc
             features_emb.append(dtime_enc)
 

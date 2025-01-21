@@ -399,7 +399,6 @@ class TransformerE2E(TorchBaseModel):
             all_preds = torch.stack(all_preds, dim=1)
             mdn_params = self.mdn_head(all_preds)
             # mdn_params: [batch_size, tgt_seq_len, self.mdn.num_params]
-            num_predictions = num_predictions.item()
 
         return mdn_params, num_predictions
     
