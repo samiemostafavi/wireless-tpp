@@ -1,6 +1,6 @@
 from .preprocess import plot_data, create_training_dataset, create_fulltf_training_dataset, create_fulltf_training_subdataset
 from .predict import generate_predictions
-from .evaluate import evaluate_model, plot_predictions
+from .evaluate import evaluate_model
 from .train import train_model
 
 def run_e2e(inp_args):

@@ -1,445 +1,118 @@
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
-import yaml, pickle, json, copy
+import yaml, pickle, json
 import numpy as np
 
 from wireless_tpp.config_factory import Config
-from wireless_tpp.runner import TPPRunnerPacketArrival, TPPRunnerLinkQuality, TPPRunnerScheduling
+from wireless_tpp.runner import TPPRunnerScheduling
 from wireless_tpp.utils import logger
-
-from edaf.core.uplink.analyze_packet import ULPacketAnalyzer
-from edaf.core.uplink.analyze_scheduling import ULSchedulingAnalyzer
-from edaf.core.uplink.analyze_channel import ULChannelAnalyzer
-
-from src.link_quality import extract_link_quality_events
-from src.packet_arrival import extract_packet_arrival_events
-from src.scheduling import extract_scheduling_events
-
-from .sample_e2e import sample_based_e2e_prediction
-from .sample_e2e_batch import sample_based_e2e_prediction_batch
-
-def create_arrival_exp_config(args, arrival_conf, batch_size, gpu, prediction_base_dir, log_folder = None):
-    model_path = Path(args.source) / "packet_arrival" / "trained_models" / arrival_conf['trained_model_name'] / arrival_conf['trained_model_id']
-    yaml_file = next(model_path.glob("*.yaml"))
-    with open(yaml_file, 'r') as file:
-        training_output_config = yaml.load(file, Loader=yaml.FullLoader)
-
-    ds_train_dir = Path(training_output_config['data_config']['train_dir'])
-    ds_train_dir = ds_train_dir.parent
-    json_file = next(ds_train_dir.glob("*.json"))
-    with open(json_file, 'r') as file:
-        training_dataset_config = json.load(file)
-
-    # fix the base_dir for the generation stage
-    training_base_dir = training_output_config['base_config']['base_dir']
-    #prediction_base_dir = training_base_dir.replace("trained_models", "prediction_results")
-
-    experiment_id = f"{training_output_config['base_config']['model_id']}_gen"
-    # Transform the dict to match training configuration format
-
-    base_config = {
-        "stage": "gen",
-        "backend": training_output_config['base_config']['backend'],
-        "dataset_id": None,
-        "runner_id": training_output_config['base_config']['runner_id'],
-        "model_id": training_output_config['base_config']['model_id'],
-        "base_dir": prediction_base_dir
-    }
-    if log_folder is not None:
-        base_config['specs'] = { "log_folder" : log_folder  }
-
-    config = {
-        "pipeline_config_id": "runner_config",
-        "data": {},
-        experiment_id: {
-            "base_config": base_config,
-            "trainer_config": {
-                "batch_size": batch_size,#training_output_config['trainer_config']['batch_size'],
-                "max_epoch": training_output_config['trainer_config']['max_epoch'],
-                "shuffle": training_output_config['trainer_config']['shuffle'],
-                "optimizer": training_output_config['trainer_config']['optimizer'],
-                "learning_rate": training_output_config['trainer_config']['learning_rate'],
-                "valid_freq": training_output_config['trainer_config']['valid_freq'],
-                "use_tfb": training_output_config['trainer_config']['use_tfb'],
-                "metrics": training_output_config['trainer_config']['metrics'],
-                "seed": training_output_config['trainer_config']['seed'],
-                "gpu": gpu,#training_output_config['trainer_config']['gpu'],
-            },
-            "model_config": {
-                "model_specs" : training_output_config['model_config']['model_specs'],
-                "hidden_size": training_output_config['model_config']['hidden_size'],
-                "num_layers": training_output_config['model_config']['num_layers'],
-                "loss_integral_num_sample_per_step": training_output_config['model_config']['loss_integral_num_sample_per_step'],
-                "use_ln": training_output_config['model_config']['use_ln'],
-                "pretrained_model_dir": training_output_config['base_config']['specs']['saved_model_dir'],
-                "thinning": arrival_conf['thinning'] if 'thinning' in arrival_conf else {},
-                "noise_regularization": training_output_config['model_config']['noise_regularization'] if 'noise_regularization' in training_output_config['model_config'] else {} 
-            },
-            "prediction_config" : arrival_conf
-        }
-    }
-    config = Config.build_from_dict(config, experiment_id=experiment_id, no_dataset=True)
-    return config, training_dataset_config
-
-def create_link_quality_exp_config(args, link_quality_conf, batch_size, gpu, prediction_base_dir, log_folder = None):
-    model_path = Path(args.source) / "link_quality" / "trained_models" / link_quality_conf['trained_model_name'] / link_quality_conf['trained_model_id']
-    yaml_file = next(model_path.glob("*.yaml"))
-    with open(yaml_file, 'r') as file:
-        training_output_config = yaml.load(file, Loader=yaml.FullLoader)
-
-    ds_train_dir = Path(training_output_config['data_config']['train_dir'])
-    ds_train_dir = ds_train_dir.parent
-    json_file = next(ds_train_dir.glob("*.json"))
-    with open(json_file, 'r') as file:
-        training_dataset_config = json.load(file)
-
-    # fix the base_dir for the generation stage
-    training_base_dir = training_output_config['base_config']['base_dir']
-    #prediction_base_dir = training_base_dir.replace("trained_models", "prediction_results")
-
-    base_config = {
-        "stage": "gen",
-        "backend": training_output_config['base_config']['backend'],
-        "dataset_id": None,
-        "runner_id": training_output_config['base_config']['runner_id'],
-        "model_id": training_output_config['base_config']['model_id'],
-        "base_dir": prediction_base_dir
-    }
-    if log_folder is not None:
-        base_config['specs'] = { "log_folder" : log_folder  }
-
-    experiment_id = f"{training_output_config['base_config']['model_id']}_gen"
-    # Transform the dict to match training configuration format
-    config = {
-        "pipeline_config_id": "runner_config",
-        "data": {},
-        experiment_id: {
-            "base_config": base_config,
-            "trainer_config": {
-                "batch_size": batch_size,
-                "max_epoch": training_output_config['trainer_config']['max_epoch'],
-                "shuffle": training_output_config['trainer_config']['shuffle'],
-                "optimizer": training_output_config['trainer_config']['optimizer'],
-                "learning_rate": training_output_config['trainer_config']['learning_rate'],
-                "valid_freq": training_output_config['trainer_config']['valid_freq'],
-                "use_tfb": training_output_config['trainer_config']['use_tfb'],
-                "metrics": training_output_config['trainer_config']['metrics'],
-                "seed": training_output_config['trainer_config']['seed'],
-                "gpu": gpu,
-            },
-            "model_config": {
-                "model_specs" : training_output_config['model_config']['model_specs'],
-                "hidden_size": training_output_config['model_config']['hidden_size'],
-                "num_layers": training_output_config['model_config']['num_layers'],
-                "loss_integral_num_sample_per_step": training_output_config['model_config']['loss_integral_num_sample_per_step'],
-                "use_ln": training_output_config['model_config']['use_ln'],
-                "pretrained_model_dir": training_output_config['base_config']['specs']['saved_model_dir'],
-                "thinning": link_quality_conf['thinning'] if 'thinning' in link_quality_conf else {},
-                "noise_regularization": training_output_config['model_config']['noise_regularization'] if 'noise_regularization' in training_output_config['model_config'] else {} 
-            },
-            "prediction_config" : link_quality_conf
-        }
-    }
-    config = Config.build_from_dict(config, experiment_id=experiment_id, no_dataset=True)
-    return config, training_dataset_config
-
-def create_scheduling_exp_config(args, scheduling_conf, batch_size, gpu, prediction_base_dir, log_folder = None):
-    model_path = Path(args.source) / "scheduling" / "trained_models" / scheduling_conf['trained_model_name'] / scheduling_conf['trained_model_id']
-    yaml_file = next(model_path.glob("*.yaml"))
-    with open(yaml_file, 'r') as file:
-        training_output_config = yaml.load(file, Loader=yaml.FullLoader)
-
-    ds_train_dir = Path(training_output_config['data_config']['train_dir'])
-    ds_train_dir = ds_train_dir.parent
-    json_file = next(ds_train_dir.glob("*.json"))
-    with open(json_file, 'r') as file:
-        training_dataset_config = json.load(file)
-
-    # fix the base_dir for the generation stage
-    training_base_dir = training_output_config['base_config']['base_dir']
-    #prediction_base_dir = training_base_dir.replace("trained_models", "prediction_results")
-
-    base_config = {
-        "stage": "gen",
-        "backend": training_output_config['base_config']['backend'],
-        "dataset_id": None,
-        "runner_id": training_output_config['base_config']['runner_id'],
-        "model_id": training_output_config['base_config']['model_id'],
-        "base_dir": prediction_base_dir
-    }
-    if log_folder is not None:
-        base_config['specs'] = { "log_folder" : log_folder  }
-
-    experiment_id = f"{training_output_config['base_config']['model_id']}_gen"
-    # Transform the dict to match training configuration format
-    config = {
-        "pipeline_config_id": "runner_config",
-        "data": {},
-        experiment_id: {
-            "base_config": base_config,
-            "trainer_config": {
-                "batch_size": batch_size,#training_output_config['trainer_config']['batch_size'],
-                "max_epoch": training_output_config['trainer_config']['max_epoch'],
-                "shuffle": training_output_config['trainer_config']['shuffle'],
-                "optimizer": training_output_config['trainer_config']['optimizer'],
-                "learning_rate": training_output_config['trainer_config']['learning_rate'],
-                "valid_freq": training_output_config['trainer_config']['valid_freq'],
-                "use_tfb": training_output_config['trainer_config']['use_tfb'],
-                "metrics": training_output_config['trainer_config']['metrics'],
-                "seed": training_output_config['trainer_config']['seed'],
-                "gpu": gpu,#training_output_config['trainer_config']['gpu'],
-            },
-            "model_config": {
-                "model_specs" : training_output_config['model_config']['model_specs'],
-                "hidden_size": training_output_config['model_config']['hidden_size'],
-                "num_layers": training_output_config['model_config']['num_layers'],
-                "loss_integral_num_sample_per_step": training_output_config['model_config']['loss_integral_num_sample_per_step'],
-                "use_ln": training_output_config['model_config']['use_ln'],
-                "pretrained_model_dir": training_output_config['base_config']['specs']['saved_model_dir'],
-                "thinning": scheduling_conf['thinning'] if 'thinning' in scheduling_conf else {},
-                "noise_regularization": training_output_config['model_config']['noise_regularization'] if 'noise_regularization' in training_output_config['model_config'] else {} 
-            },
-            "prediction_config" : scheduling_conf
-        }
-    }
-    config = Config.build_from_dict(config, experiment_id=experiment_id, no_dataset=True)
-    return config, training_dataset_config
-
 
 def generate_predictions(args):
 
     # read configuration from args.config
-    with open(args.config, 'r') as f:
-        dataset_config = json.load(f)
-    # select the source configuration
-    e2e_config = dataset_config[args.configname]
-    gpu = e2e_config['gpu']
-    batch_size = e2e_config['batch_size']
-    num_batches = e2e_config['num_batches']
+    prediction_config_path = Path(args.config)
+    with open(prediction_config_path, 'r') as f:
+        prediction_config = json.load(f)
+    prediction_config = prediction_config[args.configname]
+    batch_size = prediction_config['batch_size']
+    gpu = prediction_config['gpu']
 
-    dataset_name = e2e_config['dataset_name']
-    arrival_pred_conf = e2e_config['arrival']
-    sched_pred_conf = e2e_config['scheduling']
-    mcs_pred_conf = e2e_config['mcs']
-    retx_pred_conf = e2e_config['retx']
+    if prediction_config['dataset']:
+        dataset_path = Path(prediction_config['dataset']) / "scheduling" / "datasets" / prediction_config['dataset_name']
+    else:
+        dataset_path = Path(args.source) / "scheduling" / "datasets" / args.name
 
-    num_future_packet_predictions=e2e_config["num_future_packet_predictions"]
-    mcs_dimension_limit = e2e_config["mcs_dimension_limit"]
-    history_dimension_limit = e2e_config["history_dimension_limit"]
-    exclude_retx_predictions = e2e_config["exclude_retx_predictions"]
-    max_num_segments = e2e_config["max_num_segments"]
+    prediction_config['method'] = args.predict
 
-    # read experiment configuration
-    folder_addr = Path(args.source)
-    # read exp configuration from args.config
-    with open(folder_addr / 'experiment_config.json', 'r') as f:
-        exp_config = json.load(f)
+    dataset_id = str(dataset_path).replace("/", "_")
+    train_dir = dataset_path / 'train.pkl'
+    valid_dir = dataset_path / 'dev.pkl'
+    test_dir = dataset_path / 'test.pkl'
+    data_format = 'pkl'
 
-    # read the dataset
-    with open(folder_addr / 'e2e' / 'datasets' / dataset_name / 'config.json', 'r') as f:
-        dataset_config = json.load(f)
-    with open(folder_addr / 'e2e' / 'datasets' / dataset_name / 'test.pkl', 'rb') as f:
-        dataset = pickle.load(f)
-
-    logger.info(f"Loaded the dataset, Number of total entries: {len(dataset)}")
-
-    # prepare the results folder
-    results_folder_addr = folder_addr / 'e2e' / 'prediction_results' /  args.name
-    results_folder_addr.mkdir(parents=True, exist_ok=True)
-
-    # load arrival model configuration
-    arrival_exp_config, arrival_ds_config = create_arrival_exp_config(args, arrival_pred_conf, batch_size, gpu, results_folder_addr)
-    arrival_runner = TPPRunnerPacketArrival(
-        runner_config=arrival_exp_config,
-        unique_model_dir=False,
-        disable_logging=False,
-    )
-    log_folder = arrival_exp_config.base_config.specs['log_folder']
-
-    # mcs model configuration
-    mcs_exp_config, mcs_ds_config = create_link_quality_exp_config(args, mcs_pred_conf, batch_size, gpu, results_folder_addr, log_folder)
-    mcs_runner = TPPRunnerLinkQuality(
-        runner_config=mcs_exp_config,
-        unique_model_dir=False,
-        disable_logging=True,
-    )
-    filter_successful_attempts_for_mcs = mcs_ds_config['filter_successful_attempts']
-    mcs_eval_interval_ms = mcs_ds_config['mcs_eval_interval_ms']
-
-    # retx model configuration
-    retx_exp_config, retx_ds_config = create_link_quality_exp_config(args, retx_pred_conf, batch_size, gpu, results_folder_addr, log_folder)
-    retx_runner = TPPRunnerLinkQuality(
-        runner_config=retx_exp_config,
-        unique_model_dir=False,
-        disable_logging=True,
-    )
-
-    # load scheduling model configuration
-    scheduling_exp_config, scheduling_ds_config = create_scheduling_exp_config(args, sched_pred_conf, batch_size, gpu, results_folder_addr, log_folder)
-    sched_runner = TPPRunnerScheduling(
-        runner_config=scheduling_exp_config,
-        unique_model_dir=False,
-        disable_logging=True,
-    )
-    max_num_segments = scheduling_ds_config['window_config']['max_num_segments']
-
-    assert num_batches*batch_size <= len(dataset), f"Num_batches*batch_size: {num_batches*batch_size} is greater than the dataset size {len(dataset)}"
-    for i in range(0, num_batches*batch_size, batch_size):
-        data_batch = dataset[i : i + batch_size]  # slice out a chunk of size B
-        pred_batch = sample_based_e2e_prediction_batch(
-            data=data_batch,
-            arrival_runner=arrival_runner,
-            mcs_runner=mcs_runner,
-            retx_runner=retx_runner,
-            sched_runner=sched_runner,
-            exp_config=exp_config,
-            num_future_packet_predictions=num_future_packet_predictions,
-            mcs_eval_interval_ms=mcs_eval_interval_ms,
-            filter_successful_attempts_for_mcs=filter_successful_attempts_for_mcs,
-            mcs_dimension_limit=mcs_dimension_limit,
-            history_dimension_limit=history_dimension_limit,
-            exclude_retx_predictions=exclude_retx_predictions,
-            max_num_segments=max_num_segments
-        )
-        for b in range(batch_size):
-            if 'pred' not in dataset[i+b]:
-                dataset[i+b]['pred'] = [ [] for _ in range(num_future_packet_predictions) ]
-            for p in range(num_future_packet_predictions):
-                num_samples = pred_batch[p][b,:,:].shape[0]
-                sched_seq_len = pred_batch[p][b,:,:].shape[1]
-                processed_samples = []
-                for s in range(num_samples):
-                    sched_sequence = []
-                    reached_arrival = False
-                    for l in np.arange(sched_seq_len-1,-1,-1):
-                        sched_sequence.append(
-                            pred_batch[p][b,s,l]
-                        )
-                        if pred_batch[p][b,s,l]['type_event'] == 0:
-                            reached_arrival = True
-                            break
-                    if reached_arrival:
-                        processed_samples.append(sched_sequence[::-1])
-                    else:
-                        logger.warning(f"Sample {s}, packet {p}, in batch {b} does not have an arrival event")
-                dataset[i+b]['pred'][p] = processed_samples
-
-
-    # prepare the results folder
-    with open(Path(log_folder) / 'config.json', 'w') as f:
-        json_obj = json.dumps(e2e_config, indent=4)
-        f.write(json_obj)
-
-    # Save the dictionary to a pickle file
-    with open(Path(log_folder) / 'result.pkl', 'wb') as f:
-        pickle.dump(dataset, f)
-
-def plot_data(args):
     # read configuration from args.config
-    with open(args.config, 'r') as f:
-        e2e_config = json.load(f)
-    
-    time_masks = e2e_config['time_masks']
-    gpu = e2e_config['gpu']
+    dataset_config_path = dataset_path / 'config.json'
+    with open(dataset_config_path, 'r') as f:
+        dataset_config = json.load(f)
 
-    # read experiment configuration
-    folder_addr = Path(args.source)
-    # find all .db files in the folder
-    db_files = list(folder_addr.glob("*.db"))
-    if not db_files:
-        logger.error("No database files found in the specified folder.")
-        return
-    result_database_files = [str(db_file) for db_file in db_files]
+    logger.info(f"Loaded dataset {dataset_id}: {dataset_path}")
 
-    # read exp configuration from args.config
-    with open(folder_addr / 'experiment_config.json', 'r') as f:
-        exp_config = json.load(f)
+    model_path = Path(args.source) / "scheduling" / "trained_models" / args.name / args.id
+    yaml_file = next(model_path.glob("*.yaml"))
+    with open(yaml_file, 'r') as file:
+        training_output_config = yaml.load(file, Loader=yaml.FullLoader)
 
-    # prepare the results folder
-    results_folder_addr = folder_addr / 'e2e' / 'pre_plots' / args.name
-    results_folder_addr.mkdir(parents=True, exist_ok=True)
+    # fix the base_dir for the generation stage
+    training_base_dir = training_output_config['base_config']['base_dir']
+    prediction_base_dir = training_base_dir.replace("trained_models", "prediction_results")
 
-    time_bounds = []
-    db_id = 0
-    for result_database_file, time_mask in zip(result_database_files, time_masks):
-        pacekt_analyzer = ULPacketAnalyzer(result_database_file)
-        experiment_length_ts = pacekt_analyzer.last_ueip_ts - pacekt_analyzer.first_ueip_ts
-        begin_ts = pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[0]
-        end_ts = pacekt_analyzer.first_ueip_ts+experiment_length_ts*time_mask[1]
-        time_bounds.append((begin_ts, end_ts))
-        logger.info(f"Database {db_id}, experiment duration: {(experiment_length_ts)} seconds")
-        logger.info(f"Database {db_id}, filtering packets from {begin_ts} to {end_ts}, length: {end_ts-begin_ts} seconds")
-        db_id += 1
-
-    # packet arrival dataset opening
-    arrival_conf = e2e_config['packet_arrival']
-    with open(folder_addr / 'packet_arrival' / 'datasets' / arrival_conf['dataset_name'] / 'config.json', 'r') as f:
-        arrival_dataset_config = json.load(f)
-
-    psize_eventtype_mapping = {int(k): int(v) for k, v in arrival_dataset_config['psize_eventtype_mapping'].items()}
-    packet_arrival_events_arr = extract_packet_arrival_events(
-        result_database_files, 
-        time_bounds, 
-        psize_eventtype_mapping, 
-        arrival_dataset_config['filter_packet_sizes'],
-        exp_config, 
-        arrival_dataset_config['dtime_max']
-    )
-
-    # link quality dataset opening
-    link_quality_conf = e2e_config['link_quality']
-    with open(folder_addr / 'link_quality' / 'datasets' / link_quality_conf['dataset_name'] / 'config.json', 'r') as f:
-        link_quality_dataset_config = json.load(f)
-
-    link_retransmission_events_arr, link_mcs_events_arr = extract_link_quality_events(
-        result_database_files, 
-        time_bounds, 
-        link_quality_dataset_config['stream_rntis'], 
-        exp_config, 
-        link_quality_dataset_config['dim_process_no_mcs'], 
-        link_quality_dataset_config['min_mcs'], 
-        link_quality_dataset_config['dtime_max']
-    )
-
-    # scheduling dataset opening
-    scheduling_conf = e2e_config['scheduling']
-    with open(folder_addr / 'scheduling' / 'datasets' / scheduling_conf['dataset_name'] / 'config.json', 'r') as f:
-        scheduling_dataset_config = json.load(f)
-
-    scheduling_events_arr = extract_scheduling_events(
-        result_database_files, 
-        time_bounds, 
-        scheduling_dataset_config['stream_rntis'], 
-        exp_config,
-        scheduling_dataset_config['dtime_max']
-    )
-
-    prev_end_ts = 0
-    arrivals_ts_list, arrivals_type_list = np.array([]), np.array([])
-    link_ts_list, link_type_list = np.array([]), np.array([])
-    depart_ts_list, scheduling_ts_list, scheduling_type_list = np.array([]), np.array([]), np.array([])
-    for packet_arrival_events, link_retransmission_events, link_mcs_events, scheduling_events, time_bound in \
-          zip(
-              packet_arrival_events_arr, 
-              link_retransmission_events_arr, 
-              link_mcs_events_arr, 
-              scheduling_events_arr, 
-              time_bounds
-              ):
-        
-        begin_ts, end_ts = time_bound
-
-
-
-
+    experiment_id = f"{training_output_config['base_config']['model_id']}_gen"
+    # Transform the dict to match training configuration format
+    config = {
+        "pipeline_config_id": "runner_config",
+        "data": {
+            dataset_id: {
+                "data_format": data_format,
+                "train_dir": str(train_dir),
+                "valid_dir": str(valid_dir),
+                "test_dir": str(test_dir),
+                "data_specs": {
+                    "num_event_types": dataset_config["dim_process"],
+                    "pad_token_id": dataset_config["dim_process"],
+                    "padding_strategy" : 'do_not_pad',
+                    "max_len": None
+                }
+            }
+        },
+        experiment_id: {
+            "base_config": {
+                "stage": "gen",
+                "backend": training_output_config['base_config']['backend'],
+                "dataset_id": dataset_id,
+                "runner_id": training_output_config['base_config']['runner_id'],
+                "model_id": training_output_config['base_config']['model_id'],
+                "base_dir": prediction_base_dir,
+            },
+            "trainer_config": {
+                "batch_size": batch_size,#training_output_config['trainer_config']['batch_size'],
+                "max_epoch": training_output_config['trainer_config']['max_epoch'],
+                "shuffle": training_output_config['trainer_config']['shuffle'],
+                "optimizer": training_output_config['trainer_config']['optimizer'],
+                "learning_rate": training_output_config['trainer_config']['learning_rate'],
+                "valid_freq": training_output_config['trainer_config']['valid_freq'],
+                "use_tfb": training_output_config['trainer_config']['use_tfb'],
+                "metrics": training_output_config['trainer_config']['metrics'],
+                "seed": training_output_config['trainer_config']['seed'],
+                "gpu": gpu,#training_output_config['trainer_config']['gpu'],
+            },
+            "model_config": {
+                "model_specs" : training_output_config['model_config']['model_specs'],
+                "hidden_size": training_output_config['model_config']['hidden_size'],
+                "num_layers": training_output_config['model_config']['num_layers'],
+                "loss_integral_num_sample_per_step": training_output_config['model_config']['loss_integral_num_sample_per_step'],
+                "use_ln": training_output_config['model_config']['use_ln'],
+                "pretrained_model_dir": training_output_config['base_config']['specs']['saved_model_dir'],
+                "thinning": {},
+                "noise_regularization": training_output_config['model_config']['noise_regularization'] if 'noise_regularization' in training_output_config['model_config'] else {} 
+            },
+            "prediction_config" : prediction_config
+        }
+    }
+    config = Config.build_from_dict(config, experiment_id=experiment_id)
+    model_runner = TPPRunnerScheduling(config)
+    if args.predict == 'probabilistic':
+        model_runner.run(probability_generation=True)
+    else:
+        model_runner.run()
 
 def plot_predictions(args):
 
     # read configuration from args.config
-    dataset_config_path = Path(args.source) / "scheduling" / "datasets" / args.name / 'config.json'
-    with open(dataset_config_path, 'r') as f:
-        dataset_config = json.load(f)
+    #dataset_config_path = Path(args.source) / "scheduling" / "datasets" / args.name / 'config.json'
+    #with open(dataset_config_path, 'r') as f:
+    #    dataset_config = json.load(f)
+    dataset_config = None
     
     model_path = Path(args.source) / "scheduling" / "prediction_results" / args.name / args.id
     yaml_file = next(model_path.glob("*.yaml"))
@@ -492,12 +165,12 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
 
     # data['pred'] dimensions: [num batches, 1 , batch size, num probability samples]
     p_dtime = []
-    p_num_rbs = []
+    p_len_bytes = []
     for batch in data['pred']:
         p_dtime.append(batch[0])
-        p_num_rbs.append(batch[1])
-    cp_prob = np.concatenate(p_dtime, axis=0)
-    cp_num_rbs = np.concatenate(p_num_rbs, axis=0)
+        p_len_bytes.append(batch[1])
+    cp_dtime = np.concatenate(p_dtime, axis=0)
+    cp_len_bytes = np.concatenate(p_len_bytes, axis=0)
 
     # Here history data dimensions are: [total number of samples, seq length]
     # and prediction data dimensions are: [total number of samples, num probability samples]
@@ -525,9 +198,9 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     logger.info(f"Event types in the history plus the label: {ch_event_type}")
 
     # [num probability samples]
-    cp_prob = np.exp(cp_prob[ar_index,:])
-    # [1, 107]
-    cp_num_rbs = np.exp(cp_num_rbs[ar_index,:])
+    cp_dtime = np.exp(cp_dtime[ar_index,:])
+    # [num probability samples]
+    cp_len_bytes = np.exp(cp_len_bytes[ar_index,:])
 
 
     # history packets time series
@@ -572,16 +245,20 @@ def plot_probability_predictions_1D(dataset_config, generation_output_config, da
     fig.add_trace(go.Scatter(x=segment_ts_list[-1:], y=np.ones(len(segment_ts_list[-1:])), mode='markers+text', name='Scheduling event (label)', marker=dict(symbol='circle'), text=segment_len_list[-1:], textposition='bottom center'), row=1, col=1, secondary_y=True)
 
     fig.add_trace(
-        go.Scatter(x=ch_time[-2]+dtime_samples, y=cp_prob, mode='markers', name='predictions'),
+        go.Scatter(x=ch_time[-2]+dtime_samples, y=cp_dtime, mode='markers', name='predictions'),
         row=1, col=1,
         secondary_y=False
     )
 
-    # add a bar plot, showing probabilities of the number of rbs
-    cp_num_rbs = cp_num_rbs[0]
+    # prediction len samples
+    sample_len_min = prediction_config['probability_generation']['sample_len_min']
+    sample_len_max = prediction_config['probability_generation']['sample_len_max']
+    num_steps_len = prediction_config['probability_generation']['num_steps_len']
+    len_samples = np.linspace(sample_len_min, sample_len_max, num_steps_len)
     fig.add_trace(
-        go.Bar(x=np.arange(len(cp_num_rbs)), y=cp_num_rbs, name='Number of RBs', marker_color='rgba(0, 0, 255, 0.5)'),
-        row=2, col=1
+        go.Scatter(x=len_samples, y=cp_len_bytes, mode='markers', name='Segment length prediction [bytes]'),
+        row=2, col=1,
+        secondary_y=False
     )
 
     fig.update_layout(

@@ -157,6 +157,8 @@ class TorchModelWrapper:
                 label_len = label_len.detach().cpu().numpy() if label_len is not None else None
                 mask = event_mask.detach().cpu().numpy() if event_mask is not None else None
 
+        # check if num_event is tensor, convert it
+        num_event = num_event.item() if isinstance(num_event, torch.Tensor) else num_event
         return loss.item(), num_event, (pred_dtime, pred_len), (label_dtime, label_len), mask, None, None, (pred_dtime_var, pred_len_var), (pred_q7, pred_q9, pred_q99, pred_q999)
 
             

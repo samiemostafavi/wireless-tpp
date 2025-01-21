@@ -781,6 +781,13 @@ def create_training_dataset(args):
         pickle.dump(dataset, f)
 
 
+def sum_mretx_segments(rlc_attempts):
+    return sum([(len(rlc_attempt['mac.attempts'])-1) for rlc_attempt in rlc_attempts])
+
+def sum_rfailed_segments(rlc_attempts):
+    return sum([int(rlc_attempt['repeated']) for rlc_attempt in rlc_attempts])
+
+
 def extract_scheduling_events(packet_analyzer, sched_analyzer, begin_ts, end_ts, exp_config):
 
     slots_duration_ms = exp_config['slots_duration_ms']
@@ -817,18 +824,25 @@ def extract_scheduling_events(packet_analyzer, sched_analyzer, begin_ts, end_ts,
             time_since_last_event = time_since_frame0
         last_event_ts = time_since_frame0
 
+        # if something is wrong with the end-to-end timestamps, use rlc timestamps
+        use_rlc_timestamps = False
+        latest_rlc_out_t = packet['ip.out_t']
+        if (packet['ip.out_t'] - packet['ip.in_t']) < 0 or (packet['ip.out_t'] - packet['ip.in_t']) > 1:
+            latest_rlc_out_t = max([packet['rlc.attempts'][i]['mac.out_t'] for i in range(len(packet['rlc.attempts'])) if packet['rlc.attempts'][i]['mac.out_t'] is not None])
+            use_rlc_timestamps = True
+
         # add the packet arrival event
         this_db_events_v1.append(
             {
                 'segment' : -1, # packet arrival is not a segment
                 'packet_id' : idx,
-                'depart_timestamp' : packet['ip.out_t'],
-                'timestamp' : packet['ip.in_t'],
+                'depart_timestamp' : packet['ip.out_t'] if not use_rlc_timestamps else latest_rlc_out_t,
+                'timestamp' : packet['ip.in_t'] if not use_rlc_timestamps else packet['rlc.attempts'][0]['mac.in_t'],
                 'slot' : slot_num,
                 'len' : packet['len'],
                 'mcs_index' : mcs_index,
-                'mretx' : MRETX_PADDING,
-                'rfailed' : RFAILED_PADDING,
+                'mretx' : sum_mretx_segments(packet['rlc.attempts']),
+                'rfailed' : sum_rfailed_segments(packet['rlc.attempts']),
                 'num_rbs' : NUM_RBS_PADDING,
                 'num_symbols' : NUM_SYMBOLS_PADDING,
                 'time_since_start' : time_since_frame0,
