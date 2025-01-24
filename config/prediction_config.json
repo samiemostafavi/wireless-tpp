@@ -1,0 +1,18 @@
+{
+    "intervals_e2e_eval" : {
+        "dataset" : "",
+        "dataset_name" : "sub_eval_oa4_40_event",
+        "batch_size" : 128,
+        "gpu" : -1,
+        "probability_generation": {
+            "num_steps_dtime": 1000,
+            "sample_dtime_max" : 15,
+            "sample_dtime_min" : 0,
+            "num_steps_len": 500,
+            "sample_len_max" : 300,
+            "sample_len_min" : 0
+        },
+        "num_samples_dtime": 100,
+        "num_samples_len": 100 
+    }
+}

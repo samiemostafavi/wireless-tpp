@@ -9,6 +9,79 @@ from wireless_tpp.preprocess.scheduling import TPPDataLoaderScheduling
 # important: this line will register acc and rmse metrics
 from wireless_tpp.default_registers.register_metrics import *
 
+class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON encoder for NumPy data types."""
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()  # Convert NumPy array to list
+        if isinstance(obj, (np.integer, np.floating, np.bool_)):
+            return obj.item()  # Convert NumPy scalar to Python scalar
+        return super().default(obj)  # Default serialization for other types
+
+
+class ResultsTracker():
+    def __init__(self, postfix : str, axis=None):
+        # overall metrics
+        self.total_loss = 0
+        self.total_mae = 0
+        self.total_num_events = 0
+        self.total_var = 0
+        self.total_q5 = 0.0
+        self.total_q7 = 0.0
+        self.total_q9 = 0.0
+        self.total_q99 = 0.0
+        self.axis = axis
+        self.postfix = postfix
+
+    def append_batch_results(self, loss, pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b, label, mask):
+        axis = self.axis
+        # first mask the results
+        loss_masked = loss*mask
+        pred_var_masked = pred_var*mask
+        cover_q5_masked = ((pred_q5a <= label) & (label <= pred_q5b)) * mask
+        cover_q7_masked = ((pred_q7a <= label) & (label <= pred_q7b)) * mask
+        cover_q9_masked = ((pred_q9a <= label) & (label <= pred_q9b)) * mask
+        cover_q99_masked = ((pred_q99a <= label) & (label <= pred_q99b)) * mask
+        mae_masked = np.array(abs(label - pred_mean))*mask
+        
+        # add the results
+        self.total_loss += loss_masked.sum() if axis == None else loss_masked.sum(axis=axis)
+        self.total_num_events += mask.sum() if axis == None else mask.sum(axis=axis)
+        self.total_mae += mae_masked.sum() if axis == None else mae_masked.sum(axis=axis)
+        self.total_var += pred_var_masked.sum() if axis == None else pred_var_masked.sum(axis=axis)
+        self.total_q5 += cover_q5_masked.sum() if axis == None else cover_q5_masked.sum(axis=axis)
+        self.total_q7 += cover_q7_masked.sum() if axis == None else cover_q7_masked.sum(axis=axis)
+        self.total_q9 += cover_q9_masked.sum() if axis == None else cover_q9_masked.sum(axis=axis)
+        self.total_q99 += cover_q99_masked.sum() if axis == None else cover_q99_masked.sum(axis=axis)
+
+    def all_metrics(self):
+        return self.total_loss, self.total_num_events, self.total_mae, self.total_var, self.total_q5, self.total_q7, self.total_q9, self.total_q99
+    
+    def report_metrics(self, metrics_dict, no_loglike_num_events):
+        mae = self.total_mae / self.total_num_events
+        var = self.total_var / self.total_num_events
+        coverage_50 = self.total_q5 / self.total_num_events
+        coverage_70 = self.total_q7 / self.total_num_events
+        coverage_90 = self.total_q9 / self.total_num_events
+        coverage_99 = self.total_q99 / self.total_num_events
+        metrics_dict.update(
+            {
+                'mae' + self.postfix: mae, 
+                'var' + self.postfix: var, 
+                'coverage_50'+ self.postfix: coverage_50, 
+                'coverage_70'+ self.postfix: coverage_70, 
+                'coverage_90'+ self.postfix: coverage_90, 
+                'coverage_99'+ self.postfix: coverage_99
+            }
+        )
+        if not no_loglike_num_events:
+            loglike = -self.total_loss / self.total_num_events
+            metrics_dict.update(
+                {
+                    'loglike' + self.postfix: loglike
+                }
+            )
+        return metrics_dict
 
 class TPPRunnerE2E():
     """Standard TPP runner
@@ -294,8 +367,7 @@ class TPPRunnerE2E():
 
             # evaluate model
             if i % self.runner_config.trainer_config.valid_freq == 0:
-                #valid_metrics = self.run_one_epoch(valid_loader, RunnerPhase.VALIDATE)
-                valid_metrics = self.run_one_epoch(test_loader, RunnerPhase.VALIDATE)
+                valid_metrics = self.run_one_epoch(valid_loader, RunnerPhase.VALIDATE)
 
                 self.model_wrapper.write_summary(i, valid_metrics, RunnerPhase.VALIDATE)
 
@@ -310,12 +382,6 @@ class TPPRunnerE2E():
                 if updated:
                     message_valid += f", best updated at this epoch"
                     self.model_wrapper.save(self.runner_config.base_config.specs['saved_model_dir'])
-
-                if test_loader is not None:
-                    test_metrics = self.run_one_epoch(test_loader, RunnerPhase.VALIDATE)
-
-                    message = f"[ Epoch {i} (test) ]: test " + MetricsHelper.metrics_dict_to_str(test_metrics)
-                    logger.info(message)
 
                 logger.critical(message_valid)
 
@@ -347,12 +413,9 @@ class TPPRunnerE2E():
         model_dir = self.runner_config.base_config.specs['log_folder']
         logger.critical(f'Save evaluation results to {Path(model_dir) / "eval.json"}')
 
-        # Convert numpy types to Python native types
-        eval_metrics = {key: float(value) if isinstance(value, np.floating) else value for key, value in eval_metrics.items()}
-
         # save json file
         with open(Path(model_dir) / 'eval.json', 'w') as file:
-            json.dump(eval_metrics, file, indent=4)
+            json.dump(eval_metrics, file, cls=NumpyEncoder, indent=4)
 
         return eval_metrics
 
@@ -384,50 +447,53 @@ class TPPRunnerE2E():
         Returns:
             a dict of metrics
         """
+        ia_intervals = {
+            '100' : [90,110], # category 1
+            '50' : [45,55], # category 2
+            '20' : [18,22], # category 3
+            '10' : [8,12] # category 4
+        }
+        ia_trackers = [ (ResultsTracker(postfix=''),ResultsTracker(postfix='_sw',axis=0)) for _ in ia_intervals.keys() ]
+        overall_tracker = ResultsTracker(postfix='')
+        seq_tracker = ResultsTracker(postfix='_sw',axis=0)
+
         total_loss = 0
-        total_dtime_error = 0
-        total_num_event = 0
-        total_dtime_var = 0
-        sum_70 = 0.0
-        sum_90 = 0.0
-        sum_99 = 0.0
-        sum_999 = 0.0
-        epoch_label = []
-        epoch_pred = []
-        epoch_pred_var = []
+        total_num_events = 0
         metrics_dict = OrderedDict()
 
         for batch in data_loader:
-            batch_loss, batch_num_event, batch_pred, batch_label, batch_mask, _, _, batch_pred_var, batch_pred_quantile = \
+            # all are numpy arrays
+            loss, mask, (pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b), label, (interarrival_time, packet_length) = \
                 self.model_wrapper.run_batch_mdn(batch, phase=phase)
-            total_loss += batch_loss
-            total_num_event += batch_num_event
-            if phase == RunnerPhase.VALIDATE or phase == RunnerPhase.EVALUATE:
-                # assert the shape
-                # are only one dimensional like: (batch_size, )
-                assert batch_label[0].shape == batch_pred[0].shape == batch_pred_var[0].shape, \
-                    "Shapes of batch_label, batch_pred, batch_pred_var, must be the same {} {} {}".format(
-                        batch_label[0].shape, batch_pred[0].shape, batch_pred_var[0].shape
-                    )
-                assert batch_mask.shape == batch_label[0].shape
-                tmp = np.array(abs(batch_label[0] - batch_pred[0]))*batch_mask
-                total_dtime_error += sum(sum(tmp))
-                total_dtime_var += sum(sum(np.array(batch_pred_var[0])))
-                batch_pred_q7 = batch_pred_quantile[0]
-                batch_pred_q9 = batch_pred_quantile[1]
-                batch_pred_q99 = batch_pred_quantile[2]
-                batch_pred_q999 = batch_pred_quantile[3]
-                sum_70 += (np.array(batch_label[0]) <= np.array(batch_pred_q7)).sum()
-                sum_90 += (np.array(batch_label[0]) <= np.array(batch_pred_q9)).sum()
-                sum_99 += (np.array(batch_label[0]) <= np.array(batch_pred_q99)).sum()
-                sum_999 += (np.array(batch_label[0]) <= np.array(batch_pred_q999)).sum()
-                epoch_pred.append(batch_pred)
-                epoch_pred_var.append(batch_pred_var)
-                epoch_label.append(batch_label)
+            
+            total_loss += loss.sum()
+            total_num_events += mask.sum()
 
+            # evaluation of overall metrics (summation over sequence and batch)
+            if phase == RunnerPhase.VALIDATE or phase == RunnerPhase.EVALUATE:
+                # overall metrics
+                overall_tracker.append_batch_results(loss, pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b, label, mask)
+
+            # evaluation of sequence based metrics (summation over batch)
+            if phase == RunnerPhase.EVALUATE:
+                seq_tracker.append_batch_results(loss, pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b, label, mask)
+
+                # evaluation of conditional metrics: interarrival-time, and length (TODO)
+                for idx,ia_interval_key in enumerate(ia_intervals.keys()):
+                    ia_interval = ia_intervals[ia_interval_key]
+                    # mask for the current interval, by checking interarrival_time
+                    # we assume the entire sequence has the same interarrival time
+                    # repeat interarrival_time[:,0] with shape (B,) to become the same shape as mask (B,T)
+                    ia_time_seq = np.repeat(interarrival_time[:, 0], mask.shape[1]).reshape(mask.shape)
+                    ia_mask = (ia_time_seq >= ia_interval[0]) & (ia_time_seq <= ia_interval[1]) & (mask == 1)
+                    ia_overall_tracker = ia_trackers[idx][0] 
+                    ia_seq_tracker = ia_trackers[idx][1]
+                    ia_overall_tracker.append_batch_results(loss, pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b, label, ia_mask)
+                    ia_seq_tracker.append_batch_results(loss, pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b, label, ia_mask)
+                
         # calc loss
-        avg_loss = total_loss / total_num_event
-        metrics_dict.update({'loglike': -avg_loss, 'num_events': total_num_event})
+        avg_loss = total_loss / total_num_events
+        metrics_dict.update({'loglike': -avg_loss, 'num_events': total_num_events})
 
         if phase == RunnerPhase.VALIDATE:
             if hasattr(self.model_wrapper, "scheduler"):
@@ -435,20 +501,21 @@ class TPPRunnerE2E():
                 self.model_wrapper.scheduler.step(-avg_loss)
 
                 current_lr = self.model_wrapper.opt.param_groups[0]['lr']
-                print(f"Current learning rate: {current_lr}")
+                logger.info(f"Current learning rate: {current_lr}")
 
-        # calc errors
+        # calculate metrics and save or report them
         if phase == RunnerPhase.VALIDATE or phase == RunnerPhase.EVALUATE:
-            coverage_70 = sum_70 / total_num_event
-            coverage_90 = sum_90 / total_num_event
-            coverage_99 = sum_99 / total_num_event
-            coverage_999 = sum_999 / total_num_event
-            avg_dtime_error = total_dtime_error / total_num_event
-            avg_dtime_var = total_dtime_var / total_num_event
-            metrics_dict.update({'dtime_mae': avg_dtime_error, 'dtime_var': avg_dtime_var, 'coverage_70': coverage_70, 'coverage_90': coverage_90, 'coverage_99': coverage_99, 'coverage_999': coverage_999})
+            metrics_dict = overall_tracker.report_metrics(metrics_dict, no_loglike_num_events=True)
 
-        if phase == RunnerPhase.PREDICT:
-            metrics_dict.update({'pred': epoch_pred, 'label': epoch_label})
+        if phase == RunnerPhase.EVALUATE:
+            metrics_dict = seq_tracker.report_metrics(metrics_dict, no_loglike_num_events=False)
+            for idx,ia_interval_key in enumerate(ia_intervals.keys()):
+                ia_overall_tracker = ia_trackers[idx][0]
+                ia_seq_tracker = ia_trackers[idx][1]
+                ia_result_dict = {}
+                ia_overall_tracker.report_metrics(ia_result_dict, no_loglike_num_events=False)
+                ia_seq_tracker.report_metrics(ia_result_dict, no_loglike_num_events=False)
+                metrics_dict['ia_'+ia_interval_key] = ia_result_dict
 
         return metrics_dict
     

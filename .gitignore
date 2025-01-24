@@ -31,7 +31,6 @@ examples/checkpoints/*
 *_results/
 results/
 data/
-config/
 *.lseq
 *.parquet
 
