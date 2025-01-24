@@ -25,8 +25,9 @@ By setting "only_arrivals" in the dataset config we ignore block transmission at
 
 ## 2. Train a delay prediction model <a href='#top'>[Back to Top]</a>
 
-Train a model. Here we use a full transformer MDN model.
-Modify the e2e_training_config.yaml file with the model configuration and dataset that you want to use for trianing.
+First, modify or create the `config/e2e_training_config.yaml` file. Make sure in the data section you have created a subsection for the training datasets you created before according to the example. Next, create sections for the models configurations.
+
+Train a model using the following command and specifying the model section in the yaml file (`-i`).
 ```
 python main.py -t e2e -u train_model -f -c config/e2e_training_config.yaml -i e2e_intervals_10k_transformer
 ```
