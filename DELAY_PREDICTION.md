@@ -1,8 +1,8 @@
 # E2E Prediction 
 
-This predictor takes a history of previous scheduling events plus packet arrivals, and predicts the time and size of the next schedule. Predictions are all probabilistic.
+This predictor takes a history of previous block transmission events plus packet arrivals, and predicts the delay of the future packets sequeunce. Predictions are all probabilistic.
 
-Create an entry in `config/e2e_dataset_config.json` with a key for example `s61-64_results` to store dataset creation configs.
+Create an entry in `config/e2e_dataset_config.json` with a key for example `intervals_e2e_train` to store dataset creation configs.
 
 ## 1. Create an e2e dataset <a href='#top'>[Back to Top]</a>
 
@@ -17,12 +17,13 @@ Create training sub-dataset (which selects entries from the main dataset accordi
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train5k -f
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train10k -f
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train20k -f
+python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train50k -f
 ```
 
-By setting "only_arrivals" in the dataset config we can have sequences of just arrival events where the time_since_last_event is actually the delay of the packet.
+By setting "only_arrivals" in the dataset config we ignore block transmission attempts and we will only have sequences of arrival events with the `time_since_last_event` is actually the delay of the packet.
 
 
-## 2. Train an e2e model <a href='#top'>[Back to Top]</a>
+## 2. Train a delay prediction model <a href='#top'>[Back to Top]</a>
 
 Train a model. Here we use a full transformer MDN model.
 Modify the e2e_training_config.yaml file with the model configuration and dataset that you want to use for trianing.
