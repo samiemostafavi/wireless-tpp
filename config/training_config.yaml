@@ -10,6 +10,15 @@ data:
       pad_token_id: 1
       padding_strategy: do_not_pad
 
+  intervals_e2e_50k_40:
+    train_dir:  ./data/intervals_results/e2e/datasets/sub_train50k_40/train.pkl
+    valid_dir:  ./data/intervals_results/e2e/datasets/sub_train50k_40/dev.pkl
+    test_dir:  ./data/intervals_results/e2e/datasets/sub_train50k_40/test.pkl
+    data_specs:
+      num_event_types: 1 # max number of segments + 1
+      pad_token_id: 1
+      padding_strategy: do_not_pad
+
 e2e_intervals_10k_mlp:
   base_config:
     stage: train
@@ -129,7 +138,7 @@ e2e_intervals_10k_transformer:
   base_config:
     stage: train
     backend: torch
-    dataset_id: intervals_e2e_10k_oa_40_event
+    dataset_id: intervals_e2e_50k_40
     runner_id: std_tpp
     model_id: TransformerE2E
     base_dir: './data/intervals_results/e2e/trained_models/test10k_final_retx_transformer/'
