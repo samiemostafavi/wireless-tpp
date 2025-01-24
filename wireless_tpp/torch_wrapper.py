@@ -6,6 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 from wireless_tpp.utils import RunnerPhase, set_optimizer, set_device, logger
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.amp import autocast, GradScaler
 
 class TorchModelWrapper:
     def __init__(self, model, base_config, model_config, trainer_config, prediction_config):
@@ -38,10 +39,12 @@ class TorchModelWrapper:
             # Initialize learning rate scheduler
             self.scheduler = ReduceLROnPlateau(
                 self.opt,
-                mode='min',
-                factor=0.6,
-                patience=8
+                mode=self.trainer_config.lr_scheduler_mode, #min
+                factor=self.trainer_config.lr_scheduler_factor, #0.6
+                patience=self.trainer_config.lr_scheduler_patience #8
             )
+            # Scaler for managing gradients
+            self.scaler = GradScaler("cuda")
 
         # set up tensorboard
         self.use_tfb = self.trainer_config.use_tfb
@@ -124,42 +127,48 @@ class TorchModelWrapper:
         grad_flag = is_training
         # run model
         with torch.set_grad_enabled(grad_flag):
-            loss, num_event, dtime_loss, len_loss = self.model.loglike_loss(batch, forward=is_training)
+            with autocast(device_type="cuda"):
+                loss, loss_mask = self.model.loglike_loss(batch, forward=is_training)
 
         # Assume we dont do prediction on train set
-        pred_dtime, pred_len, pred_dtime_var, pred_len_var, label_dtime, label_len, pred_q7, pred_q9, pred_q99, pred_q999, mask, num_events = None, None, None, None, None, None, None, None, None, None, None, None
-
-        dtime_loss = dtime_loss.item() if dtime_loss is not None else None
-        len_loss = len_loss.item() if len_loss is not None else None
+        pred_mean, pred_var, pred_q7, pred_q9, pred_q99, pred_q999, label, interarrival_time_seqs, len_seqs = None, None, None, None, None, None, None, None, None
 
         # update grad
         if is_training:
             self.opt.zero_grad()
-            (loss / num_event).backward()
-            self.opt.step()
-
+            self.scaler.scale(loss.sum() / loss_mask.sum()).backward()
+            self.scaler.step(self.opt)
+            self.scaler.update()
+        
+            #self.opt.zero_grad()
+            #(loss / num_event).backward()
+            #self.opt.step()
         else:
-
             #self.model.eval()
             with torch.no_grad():
-                (pred_dtime, pred_dtime_var), (pred_len, pred_len_var), \
-                    (label_dtime, label_len), (pred_q7, pred_q9, pred_q99, pred_q999), event_mask, num_events = self.model.predict_mean_variance(batch=batch)
+                (pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b), label, \
+                    (interarrival_time_seqs, len_seqs), pred_mask = self.model.predict(batch=batch)
 
-                pred_dtime = pred_dtime.detach().cpu().numpy() if pred_dtime is not None else None
-                pred_dtime_var = pred_dtime_var.detach().cpu().numpy() if pred_dtime_var is not None else None
-                pred_len = pred_len.detach().cpu().numpy() if pred_len is not None else None
-                pred_len_var = pred_len_var.detach().cpu().numpy() if pred_len_var is not None else None
-                label_dtime = label_dtime.detach().cpu().numpy() if label_dtime is not None else None
-                pred_q7 = pred_q7.detach().cpu().numpy() if pred_q7 is not None else None
-                pred_q9 = pred_q9.detach().cpu().numpy() if pred_q9 is not None else None
-                pred_q99 = pred_q99.detach().cpu().numpy() if pred_q99 is not None else None
-                pred_q999 = pred_q999.detach().cpu().numpy() if pred_q999 is not None else None
-                label_len = label_len.detach().cpu().numpy() if label_len is not None else None
-                mask = event_mask.detach().cpu().numpy() if event_mask is not None else None
+                pred_mean = pred_mean.detach().cpu().numpy() if pred_mean is not None else None
+                pred_var = pred_var.detach().cpu().numpy() if pred_var is not None else None
+                pred_q5a = pred_q5a.detach().cpu().numpy() if pred_q5a is not None else None
+                pred_q5b = pred_q5b.detach().cpu().numpy() if pred_q5b is not None else None
+                pred_q7a = pred_q7a.detach().cpu().numpy() if pred_q7a is not None else None
+                pred_q7b = pred_q7b.detach().cpu().numpy() if pred_q7b is not None else None
+                pred_q9a = pred_q9a.detach().cpu().numpy() if pred_q9a is not None else None
+                pred_q9b = pred_q9b.detach().cpu().numpy() if pred_q9b is not None else None
+                pred_q99a = pred_q99a.detach().cpu().numpy() if pred_q99a is not None else None
+                pred_q99b = pred_q99b.detach().cpu().numpy() if pred_q99b is not None else None
+                label = label.detach().cpu().numpy() if label is not None else None
 
-        # check if num_event is tensor, convert it
-        num_event = num_event.item() if isinstance(num_event, torch.Tensor) else num_event
-        return loss.item(), num_event, (pred_dtime, pred_len), (label_dtime, label_len), mask, None, None, (pred_dtime_var, pred_len_var), (pred_q7, pred_q9, pred_q99, pred_q999)
+                interarrival_time_seqs = interarrival_time_seqs.detach().cpu().numpy() if interarrival_time_seqs is not None else None
+                len_seqs = len_seqs.detach().cpu().numpy() if len_seqs is not None else None
+                pred_mask = pred_mask.detach().cpu().numpy() if pred_mask is not None else None
+
+            # check if pred_mask == loss_mask
+            # TODO
+
+        return loss.detach().cpu().numpy(), loss_mask.detach().cpu().numpy(), (pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b), label, (interarrival_time_seqs, len_seqs)
 
             
 

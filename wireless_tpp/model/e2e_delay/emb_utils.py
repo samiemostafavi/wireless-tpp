@@ -12,22 +12,33 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class FeatureCombiner(nn.Module):
-    def __init__(self, emb_dims, d_model, device):
+    def __init__(self, emb_dims, d_model, dropout_rate, device):
         """
         emb_dims: list of dims for each feature's embedding
         d_model: final dimension
         """
         super().__init__()
         self.in_dim = sum(emb_dims)
+        #self.mlp = nn.Sequential(
+        #    nn.Linear(self.in_dim, self.in_dim, device=device),
+        #    nn.ReLU(),
+        #    nn.Linear(self.in_dim, d_model, device=device)
+        #)
+        self.input_dropout = nn.Dropout(dropout_rate)
         self.mlp = nn.Sequential(
-            nn.Linear(self.in_dim, self.in_dim, device=device),
+            nn.Linear(self.in_dim, 2 * self.in_dim, device=device),  # Expand
             nn.ReLU(),
-            nn.Linear(self.in_dim, d_model, device=device)
+            nn.Dropout(dropout_rate),
+            nn.Linear(2 * self.in_dim, self.in_dim, device=device),  # Compress
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(self.in_dim, d_model, device=device)           # Project to d_model
         )
 
     def forward(self, *emb_list):
         # emb_list is list of Tensors [B, seq_len, d_featureDim]
         x = torch.cat(emb_list, dim=-1)  # [B, seq_len, sum(emb_dims)]
+        x = self.input_dropout(x)
         return self.mlp(x)               # [B, seq_len, d_model]
 
 
@@ -260,6 +271,7 @@ class DelayEmbedding(nn.Module):
             self.features_to_dmodel = FeatureCombiner(
                 features_dims, 
                 self.d_model,
+                model_config.dropout_rate,
                 self.device
             )
 

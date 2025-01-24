@@ -88,6 +88,7 @@ def generate_predictions(args):
             },
             "model_config": {
                 "model_specs" : training_output_config['model_config']['model_specs'],
+                "dropout_rate" : training_output_config['model_config']['dropout_rate'],
                 "hidden_size": training_output_config['model_config']['hidden_size'],
                 "num_layers": training_output_config['model_config']['num_layers'],
                 "loss_integral_num_sample_per_step": training_output_config['model_config']['loss_integral_num_sample_per_step'],

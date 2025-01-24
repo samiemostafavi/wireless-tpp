@@ -1,0 +1,271 @@
+pipeline_config_id: runner_config
+
+data:
+  s61-64_e2e_5k:
+    train_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k/train.pkl
+    valid_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k/dev.pkl
+    test_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k/test.pkl
+    data_specs:
+      num_event_types: 7 # max number of segments + 1
+      pad_token_id: 7
+      padding_strategy: do_not_pad
+
+  s61-64_e2e_5k_oa:
+    train_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k_oa/train.pkl
+    valid_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k_oa/dev.pkl
+    test_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k_oa/test.pkl
+    data_specs:
+      num_event_types: 8 # max number of segments + 1
+      pad_token_id: 8
+      padding_strategy: do_not_pad
+
+  intervals_e2e_10k_oa_time:
+    train_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_time/train.pkl
+    valid_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_time/dev.pkl
+    test_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_time/test.pkl
+    data_specs:
+      num_event_types: 1
+      pad_token_id: 1
+      max_len: 33
+      padding_side: left # very important for encoder transformer model
+      padding_strategy: max_length
+      model_input_names: ["slot_seqs", "len_seqs", "mcs_seqs", "mretx_seqs", "rfailed_seqs", "num_rbs_seqs", "time_seqs", "time_delta_seqs", "type_seqs", "label_mask_seqs", "batch_non_pad_mask"] # no attention_mask
+
+  intervals_e2e_10k_oa_single:
+    train_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_single/train.pkl
+    valid_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_single/dev.pkl
+    test_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_single/test.pkl
+    data_specs:
+      num_event_types: 1
+      pad_token_id: 1
+      padding_strategy: do_not_pad
+
+  intervals_e2e_10k_oa_1s_time:
+    train_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_1s_time/train.pkl
+    valid_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_1s_time/dev.pkl
+    test_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_1s_time/test.pkl
+    data_specs:
+      num_event_types: 1
+      pad_token_id: 1
+      max_len: 67
+      padding_side: left # very important for encoder transformer model
+      padding_strategy: max_length
+      model_input_names: ["slot_seqs", "len_seqs", "mcs_seqs", "mretx_seqs", "rfailed_seqs", "num_rbs_seqs", "time_seqs", "time_delta_seqs", "type_seqs", "interarrival_time_seqs", "label_mask_seqs", "batch_non_pad_mask"] # no attention_mask
+
+  intervals_e2e_10k_oa_40_event:
+    train_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa4_40_event/train.pkl
+    valid_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa4_40_event/dev.pkl
+    test_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa4_40_event/test.pkl
+    data_specs:
+      num_event_types: 1 # max number of segments + 1
+      pad_token_id: 1
+      padding_strategy: do_not_pad
+
+  intervals_e2e_10k_oa_p5s_time:
+    train_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_p5s_time/train.pkl
+    valid_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_p5s_time/dev.pkl
+    test_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_p5s_time/test.pkl
+    data_specs:
+      num_event_types: 1
+      pad_token_id: 1
+      max_len: 33
+      padding_side: right # very important for encoder transformer model: left, for rnn: right
+      padding_strategy: max_length
+      model_input_names: ["slot_seqs", "len_seqs", "mcs_seqs", "mretx_seqs", "rfailed_seqs", "num_rbs_seqs", "time_seqs", "time_delta_seqs", "type_seqs", "interarrival_time_seqs", "label_mask_seqs", "batch_non_pad_mask"] # no attention_mask
+
+  s61-64_e2e_20k_oa:
+    train_dir:  ./data/s61-64_results/e2e/datasets/sub_train20k_oa/train.pkl
+    valid_dir:  ./data/s61-64_results/e2e/datasets/sub_train20k_oa/dev.pkl
+    test_dir:  ./data/s61-64_results/e2e/datasets/sub_train20k_oa/test.pkl
+    data_specs:
+      num_event_types: 8 # max number of segments + 1
+      pad_token_id: 8
+      padding_strategy: do_not_pad
+
+
+e2e_intervals_10k_mlp:
+  base_config:
+    stage: train
+    backend: torch
+    dataset_id: intervals_e2e_10k_oa_40_event
+    runner_id: std_tpp
+    model_id: MLPE2E
+    base_dir: './data/intervals_results/e2e/trained_models/test10k_final_mlp/'
+  trainer_config:
+    weight_decay: 1.e-4
+    batch_size: 64
+    max_epoch: 500
+    shuffle: False
+    optimizer: AdamW
+    lr_scheduler_mode: 'min'
+    lr_scheduler_patience: 5
+    lr_scheduler_factor: 0.5
+    learning_rate: 1.e-3
+    valid_freq: 5
+    use_tfb: False
+    metrics: [ 'acc', 'rmse' ]
+    seed: 2019
+    gpu: 0
+  model_config:
+    hidden_size: 16
+    use_ln: True
+    dropout_rate: 0.2
+    noise_regularization:
+      dtime:
+        noise_type: 'gaussian'
+        std_dev: 0.1
+    model_specs:
+      concat_features: False
+      types_and_paddings: 
+        slot: [21, 20] # slot indices: 0 to 19 (20 types), and padding token
+        mcs: [30, 29] # MCS indices: 0 to 28 (29 types), and padding token
+        mretx: [9, 8] # retransmission numbers: 0 to 7 (9 types), and padding token
+        rfailed: [9, 8] # failed attempt numbers: 0 to 7 (9 types), and padding token
+        num_rbs: [107, 106] # number of rbs 0-106 (107 types), and padding token
+      mdn:
+        num_mix_components: 6
+      embeddings:
+        include_dtime: False # Must be False always
+        include_interarrival_time: True
+        include_time: False
+        include_len: False
+        include_slot: True
+        include_mcs: True
+        include_mretx: False
+        include_rfailed: False
+
+
+e2e_intervals_10k_rnn:
+  base_config:
+    stage: train
+    backend: torch
+    dataset_id: intervals_e2e_10k_oa_40_event
+    runner_id: std_tpp
+    model_id: RecurrentE2E
+    base_dir: './data/intervals_results/e2e/trained_models/test10k_final_retx_rnn/'
+  trainer_config:
+    weight_decay: 1.e-4 # important for encoder
+    batch_size: 64
+    max_epoch: 500
+    shuffle: False
+    optimizer: AdamW
+    lr_scheduler_mode: 'min'
+    lr_scheduler_patience: 5
+    lr_scheduler_factor: 0.5
+    learning_rate: 1.e-3
+    valid_freq: 5
+    use_tfb: False
+    metrics: [ 'acc', 'rmse' ]
+    seed: 2019
+    gpu: 0
+  model_config:
+    hidden_size: 16
+    use_ln: True
+    dropout_rate: 0.2 
+    noise_regularization:
+      dtime:
+        noise_type: 'gaussian'
+        std_dev: 0.1
+    model_specs:
+      concat_features: True
+      types_and_paddings:
+        slot: [21, 20] # slot indices: 0 to 19 (20 types), and padding token
+        mcs: [30, 29] # MCS indices: 0 to 28 (29 types), and padding token
+        mretx: [9, 8] # retransmission numbers: 0 to 7 (9 types), and padding token
+        rfailed: [9, 8] # failed attempt numbers: 0 to 7 (9 types), and padding token
+        num_rbs: [107, 106] # number of rbs 0-106 (107 types), and padding token
+      last_layer_mlp: False
+      teacher_forcing: False
+      rnn_type: 'lstm'
+      num_layers: 2
+      bidirectional: False
+      mdn:
+        num_mix_components: 6
+      tgt_seq_len: 20
+      src_seq_len: 20
+      embeddings:
+        include_dtime: True # Must be True always
+        include_interarrival_time: True
+        include_time: False
+        include_len: False
+        include_slot: False
+        include_mcs: True
+        include_mretx: True
+        include_rfailed: True
+      target:
+        include_mcs: False
+        include_mretx: False
+        include_rfailed: False
+
+
+e2e_intervals_10k_transformer:
+  base_config:
+    stage: train
+    backend: torch
+    dataset_id: intervals_e2e_10k_oa_40_event
+    runner_id: std_tpp
+    model_id: TransformerE2E
+    base_dir: './data/intervals_results/e2e/trained_models/test10k_final_retx_transformer/'
+  trainer_config:
+    weight_decay: 1.e-4 # important for encoder
+    batch_size: 64
+    max_epoch: 500
+    shuffle: False
+    optimizer: AdamW
+    lr_scheduler_mode: 'min'
+    lr_scheduler_patience: 6
+    lr_scheduler_factor: 0.5
+    learning_rate: 5.e-3 # was 1.e-3, but 5.e-4 is better  
+    valid_freq: 5
+    use_tfb: False
+    metrics: [ 'acc', 'rmse' ]
+    seed: 2019
+    gpu: 0
+  model_config:
+    hidden_size: 16 # tried 32 and 24, did not work better
+    use_ln: True
+    dropout_rate: 0.2 # tried 0.2, did not work better
+    noise_regularization:
+      dtime:
+        noise_type: 'gaussian'
+        std_dev: 0.1
+    model_specs:
+      types_and_paddings: 
+        slot: [21, 20] # slot indices: 0 to 19 (20 types), and padding token
+        mcs: [30, 29] # MCS indices: 0 to 28 (29 types), and padding token
+        mretx: [9, 8] # retransmission numbers: 0 to 7 (9 types), and padding token
+        rfailed: [9, 8] # failed attempt numbers: 0 to 7 (9 types), and padding token
+        num_rbs: [107, 106] # number of rbs 0-106 (107 types), and padding token
+      concat_features: True # SO important when include_mcs and more, otherwise model does not learn 
+      last_layer_mlp: False
+      teacher_forcing: False
+      encoder:
+        ff_exp_rate: 32
+        num_heads: 4
+        num_layers: 6 # tried 8, did not work better, generally 6 is good. A small number like 1 or 2 won't work, tried 4 also did not work as good.
+        use_residual: True # super important, otherwise model does not learn
+      decoder:
+        ff_exp_rate: 32
+        type: 'parallel' # can be 'autoregressive' or 'parallel'
+        num_self_heads: 4
+        num_cross_heads: 4
+        num_layers: 6 # 6
+        use_residual: True # super important, otherwise model does not learn
+      mdn:
+        num_mix_components: 8
+      tgt_seq_len: 20
+      src_seq_len: 20
+      embeddings:
+        include_dtime: True # Must be True always
+        include_time: False
+        include_interarrival_time: True
+        include_len: False
+        include_slot: False
+        include_mcs: True
+        include_mretx: True
+        include_rfailed: True
+      target:
+        include_mcs: False
+        include_mretx: False
+        include_rfailed: False
+

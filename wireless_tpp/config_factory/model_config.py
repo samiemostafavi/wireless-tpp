@@ -18,6 +18,9 @@ class TrainerConfig(Config):
         self.valid_freq = kwargs.get('valid_freq', 1)
         self.use_tfb = kwargs.get('use_tfb', False)
         self.metrics = kwargs.get('metrics', ['acc', 'rmse'])
+        self.lr_scheduler_mode = kwargs.get('lr_scheduler_mode', 'min')
+        self.lr_scheduler_factor = kwargs.get('lr_scheduler_factor', 0.5)
+        self.lr_scheduler_patience = kwargs.get('lr_scheduler_patience', 6)
 
     def get_yaml_config(self):
         """Return the config in dict (yaml compatible) format.
@@ -35,7 +38,10 @@ class TrainerConfig(Config):
                 'learning_rate': self.learning_rate,
                 'valid_freq': self.valid_freq,
                 'use_tfb': self.use_tfb,
-                'metrics': self.metrics
+                'metrics': self.metrics,
+                'lr_scheduler_mode': self.lr_scheduler_mode,
+                'lr_scheduler_factor': self.lr_scheduler_factor,
+                'lr_scheduler_patience': self.lr_scheduler_patience
                 }
 
     @staticmethod
@@ -64,8 +70,11 @@ class TrainerConfig(Config):
                              learning_rate=self.learning_rate,
                              valid_freq=self.valid_freq,
                              use_tfb=self.use_tfb,
-                             metrics=self.metrics
-                             )
+                             metrics=self.metrics,
+                             lr_scheduler_mode=self.lr_scheduler_mode,
+                             lr_scheduler_factor=self.lr_scheduler_factor,
+                             lr_scheduler_patience=self.lr_scheduler_patience,
+                        )
 
 class NoiseRegularizationConfig(Config):
     def __init__(self, **kwargs):

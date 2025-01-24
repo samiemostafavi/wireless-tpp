@@ -1,6 +1,8 @@
 import torch
 import torch.distributions as D
 from torch import nn
+import random
+import numpy as np
 
 from wireless_tpp.model.baselayer import EncoderLayer, DecoderLayer, MultiHeadAttention, TimePositionalEncoding, ScaledSoftplus, PositionalEncoding, FeedForwardBlock
 from wireless_tpp.model.basemodel import TorchBaseModel
@@ -28,22 +30,27 @@ class TransformerE2E(TorchBaseModel):
         self.d_model = model_config.hidden_size
         self.use_norm = model_config.use_ln
         self.dropout = model_config.dropout_rate
-
         self.tgt_seq_len = model_config.model_specs['tgt_seq_len']
         self.src_seq_len = model_config.model_specs['src_seq_len']
-        self.teacher_forcing = model_config.model_specs['teacher_forcing']
-        self.last_layer_mlp = model_config.model_specs['last_layer_mlp']
-
-        # size of transformer tokens stays fixed
+        
+        # encoder
         self.n_encoder_heads = model_config.model_specs['encoder']['num_heads']
         self.n_encoder_layers = model_config.model_specs['encoder']['num_layers']
         self.encoder_use_residual = model_config.model_specs['encoder']['use_residual']
+        self.encoder_ff_exp_rate = model_config.model_specs['encoder']['ff_exp_rate']
         logger.info(f"Encoder with {self.n_encoder_heads} heads, num_layers: {self.n_encoder_layers}, use residual: {self.encoder_use_residual}")
+
+        # decoder
+        self.teacher_forcing = model_config.model_specs['teacher_forcing']
+        self.last_layer_mlp = model_config.model_specs['last_layer_mlp']
         if not self.last_layer_mlp:
+            self.decoder_type = model_config.model_specs['decoder']['type']
+            assert self.decoder_type in ['parallel', 'autoregressive']
             self.n_decoder_self_heads = model_config.model_specs['decoder']['num_self_heads']
             self.n_decoder_cross_heads = model_config.model_specs['decoder']['num_cross_heads']
             self.n_decoder_layers = model_config.model_specs['decoder']['num_layers']
             self.decoder_use_residual = model_config.model_specs['decoder']['use_residual']
+            self.decoder_ff_exp_rate = model_config.model_specs['decoder']['ff_exp_rate']
             logger.info(f"Decoder with {self.n_decoder_self_heads} self heads, {self.n_decoder_cross_heads} cross heads, num_layers: {self.n_decoder_layers}, use residual: {self.decoder_use_residual}")
 
         # slots embedding
@@ -89,10 +96,10 @@ class TransformerE2E(TorchBaseModel):
         # Encoder layers
         # encoder MLP
         self.feed_forward_encoder = nn.Sequential(
-            nn.Linear(self.d_model, self.d_model * 4), # *4 is important, better than *2
+            nn.Linear(self.d_model, self.d_model * self.encoder_ff_exp_rate), # *4 is important, better than *2
             nn.GELU(), # THIS IS IMPORTANT
             nn.Dropout(p=self.dropout),
-            nn.Linear(self.d_model * 4, self.d_model), # *4 is important, better than *2
+            nn.Linear(self.d_model * self.encoder_ff_exp_rate, self.d_model), # *4 is important, better than *2
             nn.Dropout(p=self.dropout), # SO IMPORTANT TO ADD DROPOUT HERE
         )
         # Transformer encoder layers (self.encoder_layers)
@@ -123,10 +130,10 @@ class TransformerE2E(TorchBaseModel):
             # Transformer decoder layers
             # decoder MLP
             self.feed_forward_decoder = nn.Sequential(
-                nn.Linear(self.d_model, self.d_model * 4), # *4 is important, better than *2
+                nn.Linear(self.d_model, self.d_model * self.decoder_ff_exp_rate), # *4 is important, better than *2
                 nn.GELU(), # THIS IS IMPORTANT
                 nn.Dropout(self.dropout),
-                nn.Linear(self.d_model * 4, self.d_model), # *4 is important, better than *2
+                nn.Linear(self.d_model * self.decoder_ff_exp_rate, self.d_model), # *4 is important, better than *2
                 nn.Dropout(p=self.dropout), # SO IMPORTANT TO ADD DROPOUT HERE
             )
             # Transformer decoder layers (self.decoder_layers)
@@ -221,7 +228,7 @@ class TransformerE2E(TorchBaseModel):
         return dec_output
 
 
-    def get_dec_input_tf(self, seq_obj : SequenceSeperate, idx : int):
+    def get_dec_input_parallel(self, seq_obj : SequenceSeperate, is_teacher_forcing_now : bool):
         # Suppose self.tgt_dtime_seqs.shape = [batch_size, tgt_seq_len].
         batch_size, tgt_seq_len = seq_obj.tgt_dtime_seqs.size()
 
@@ -243,21 +250,21 @@ class TransformerE2E(TorchBaseModel):
         pad_mask[:, 0] = True
 
         # Copy ground-truth dtimes up to idx-1 into positions [1..idx]
-        # (Note: if idx=0, this does nothing.)
-        if idx > 0:
-            tmp = seq_obj.tgt_dtime_seqs[:, :idx]
-            embeddings = self.delay_embedding(
-                seq_obj.tgt_dtime_seqs[:, :idx],
-                seq_obj.tgt_time_seqs[:, :idx], 
-                seq_obj.tgt_interarrival_time_seqs[:, :idx], 
-                seq_obj.tgt_slot_seqs[:, :idx],
-                seq_obj.tgt_mcs_seqs[:, :idx] if self.include_mcs_in_tgt else self.mcs_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
-                seq_obj.mretx_seqs if self.include_mretx_in_tgt else self.mretx_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
-                seq_obj.rfailed_seqs if self.include_rfailed_in_tgt else self.rfailed_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
-                seq_obj.tgt_len_seqs[:, :idx]
-            )
-            dec_input[:, 1:idx+1] = embeddings
-            pad_mask[:, 1:idx+1] = seq_obj.tgt_non_pad_mask[:, :idx]
+        idx = self.tgt_seq_len + self.src_seq_len - 1
+        idy = self.src_seq_len
+        tmp = seq_obj.dtime_seqs[:, idy:idx]
+        embeddings = self.delay_embedding(
+            seq_obj.dtime_seqs[:, idy:idx] if is_teacher_forcing_now else torch.ones_like(tmp, device=self.device, dtype=torch.long)*(-100.0),
+            seq_obj.time_seqs[:, idy:idx], 
+            seq_obj.interarrival_time_seqs[:, idy:idx], 
+            seq_obj.slot_seqs[:, idy:idx],
+            seq_obj.mcs_seqs[:, idy:idx] if self.include_mcs_in_tgt else self.mcs_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
+            seq_obj.mretx_seqs[:, idy:idx] if self.include_mretx_in_tgt else self.mretx_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
+            seq_obj.rfailed_seqs[:, idy:idx] if self.include_rfailed_in_tgt else self.rfailed_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
+            seq_obj.len_seqs[:, idy:idx]
+        )
+        dec_input[:, 1:] = embeddings
+        pad_mask[:, 1:] = seq_obj.non_pad_mask[:, idy:idx]
         return dec_input, pad_mask.long()
 
     def append_dec_input(self, seq_obj : SequenceSeperate, idx : int, dec_out_step = None, prev_dec_input = None, prev_pad_mask = None):
@@ -334,6 +341,7 @@ class TransformerE2E(TorchBaseModel):
             assert self.last_layer_mlp == False
 
         is_teacher_forcing_now = self.teacher_forcing
+
         if not forward:
             is_teacher_forcing_now = False
 
@@ -348,23 +356,39 @@ class TransformerE2E(TorchBaseModel):
             # output is [batch_size, 1, self.tgt_seq_len*self.mdn.num_params]
             # convert it to [batch_size, self.tgt_seq_len, self.mdn.num_params]
             mdn_params = mdn_params.view(-1, self.tgt_seq_len, self.mdn.num_params)
-            num_predictions = seq_obj.tgt_non_pad_mask.sum()
-        else:
+            num_predictions = seq_obj.tgt_non_pad_mask.sum(axis=0)
+        else:     
             # use decoder to predict the future
-            # We'll store predictions for each time step
-            all_preds = []
-            num_predictions = 0
-            # 3) Auto-regressive decoding
-            #    for each idx in [0..(tgt_seq_len-1)], feed partial dec_input
-            for idx in range(self.tgt_seq_len):
-                # dec_input => [batch_size, tgt_seq_len], partial sequence up to idx-1
-                # tgt_mask => [batch_size, tgt_seq_len], 1=real token, 0=pad token
-                if is_teacher_forcing_now:
-                    # does not use the output of the decoder
-                    # just forces the labels to be the input of the decoder
-                    # NOTE: should not be used for evaluation
-                    dec_input, tgt_pad_mask = self.get_dec_input_tf(seq_obj, idx)
-                else:
+            if self.decoder_type == 'parallel':
+                # parallel decoding: can be teacher forcing or not
+                # predicts the entire decoder sequence at once
+                # the output of the previous step will be either true values (in teacher forcing) or paddings
+                dec_input, tgt_pad_mask = self.get_dec_input_parallel(seq_obj, is_teacher_forcing_now)
+
+                # 4) Pass into the decoder
+                # dec_input: [batch_size, tgt_seq_len]
+                # enc_output: [batch_size, src_seq_len, d_model]
+                # src_pad_mask: [batch_size, src_seq_len] mask for encoder outputs (e.g. padding mask)
+                # tgt_pad_mask_tf: [batch_size, tgt_seq_len, tgt_seq_len] mask for decoder inputs (e.g. padding mask)
+                # dec_out => [batch_size, tgt_seq_len, d_model]
+                dec_out = self.decode(
+                    dec_input_emb=dec_input,
+                    enc_output=enc_output,
+                    src_pad_mask=seq_obj.src_non_pad_mask.float(),
+                    tgt_pad_mask=tgt_pad_mask
+                )
+                num_predictions = tgt_pad_mask.sum(axis=0)
+                mdn_params = self.mdn_head(dec_out)
+            else:
+                # autoregressive decoding
+                # We'll store predictions for each time step
+                all_preds = []
+                num_predictions = torch.zeros(self.tgt_seq_len)
+                # 3) Auto-regressive decoding
+                #    for each idx in [0..(tgt_seq_len-1)], feed partial dec_input
+                for idx in range(self.tgt_seq_len):
+                    # dec_input => [batch_size, tgt_seq_len], partial sequence up to idx-1
+                    # tgt_mask => [batch_size, tgt_seq_len], 1=real token, 0=pad token
                     if idx == 0:
                         # produces the SOS token
                         dec_input, tgt_pad_mask = self.append_dec_input(
@@ -376,29 +400,29 @@ class TransformerE2E(TorchBaseModel):
                             seq_obj=seq_obj, idx=idx, dec_out_step=dec_out_step.unsqueeze(1), prev_dec_input=dec_input, prev_pad_mask=tgt_pad_mask
                         )
 
-                # 4) Pass into the decoder
-                # dec_input: [batch_size, tgt_seq_len]
-                # enc_output: [batch_size, src_seq_len, d_model]
-                # src_pad_mask: [batch_size, src_seq_len] mask for encoder outputs (e.g. padding mask)
-                # tgt_pad_mask: [batch_size, tgt_seq_len] mask for decoder inputs (e.g. padding mask)
-                # dec_out => [batch_size, tgt_seq_len, d_model]
-                dec_out = self.decode(
-                    dec_input_emb=dec_input,
-                    enc_output=enc_output,
-                    src_pad_mask=seq_obj.src_non_pad_mask.float(),
-                    tgt_pad_mask=tgt_pad_mask
-                )
-                # we take the last position (i.e. dec_out[:, idx, :]) for prediction
-                #dec_out_step = dec_out[:, idx, :] # shape [batch_size, d_model]
-                dec_out_step = dec_out[:, -1, :]
-                all_preds.append(dec_out_step)
-                num_predictions += tgt_pad_mask[:, idx].sum()
+                    # 4) Pass into the decoder
+                    # dec_input: [batch_size, tgt_seq_len]
+                    # enc_output: [batch_size, src_seq_len, d_model]
+                    # src_pad_mask: [batch_size, src_seq_len] mask for encoder outputs (e.g. padding mask)
+                    # tgt_pad_mask: [batch_size, tgt_seq_len] mask for decoder inputs (e.g. padding mask)
+                    # dec_out => [batch_size, tgt_seq_len, d_model]
+                    dec_out = self.decode(
+                        dec_input_emb=dec_input,
+                        enc_output=enc_output,
+                        src_pad_mask=seq_obj.src_non_pad_mask.float(),
+                        tgt_pad_mask=tgt_pad_mask
+                    )
+                    # we take the last position (i.e. dec_out[:, idx, :]) for prediction
+                    #dec_out_step = dec_out[:, idx, :] # shape [batch_size, d_model]
+                    dec_out_step = dec_out[:, -1, :]
+                    all_preds.append(dec_out_step)
+                    num_predictions[idx] = tgt_pad_mask[:, idx].sum()
 
-            # and feed the results into a final linear to get distribution parameters.
-            # 5) Convert all_preds => [batch_size, tgt_seq_len, d_model]
-            all_preds = torch.stack(all_preds, dim=1)
-            mdn_params = self.mdn_head(all_preds)
-            # mdn_params: [batch_size, tgt_seq_len, self.mdn.num_params]
+                # and feed the results into a final linear to get distribution parameters.
+                # 5) Convert all_preds => [batch_size, tgt_seq_len, d_model]
+                all_preds = torch.stack(all_preds, dim=1)
+                mdn_params = self.mdn_head(all_preds)
+                # mdn_params: [batch_size, tgt_seq_len, self.mdn.num_params]
 
         return mdn_params, num_predictions
     
@@ -412,28 +436,42 @@ class TransformerE2E(TorchBaseModel):
         labels = seq_obj.tgt_dtime_seqs_transformed
         # labels: [batch_size, tgt_seq_len]
 
-        nll, num_predictions_nll = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask)
-        assert num_predictions.item() == num_predictions_nll.item()
+        nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask)
+        num_predictions_nll = nll_mask.sum(axis=0)
+        assert np.array_equal(num_predictions.cpu().numpy(), num_predictions_nll.cpu().numpy())
 
-        return nll, num_predictions, None, None
+        return nll, nll_mask
     
 
-    def predict_mean_variance(self, batch):
+    def predict(self, batch):
 
         seq_obj = SequenceSeperate(batch, self.device, self.src_seq_len, self.tgt_seq_len, self.delay_embedding.dtime_transform, self.delay_embedding.len_transform, self.delay_embedding.interarrival_time_transform)
-        labels = seq_obj.tgt_dtime_seqs_transformed
+        label = seq_obj.tgt_dtime_seqs_transformed
+
+        interarrival_time_src_seqs = seq_obj.src_interarrival_time_seqs_transformed
+        len_src_seqs = seq_obj.src_len_seqs_transformed
 
         mdn_params, num_predictions = self.forward(seq_obj)
-        pred_dtime, pred_dtime_var = self.mdn.mean_variance(mdn_params)
-        pred_q7 = self.mdn.quantile(mdn_params,q=0.7)
-        pred_q9 = self.mdn.quantile(mdn_params,q=0.9)
-        pred_q99 = self.mdn.quantile(mdn_params,q=0.99)
-        pred_q999 = self.mdn.quantile(mdn_params,q=0.999)
+        pred_mean, pred_var = self.mdn.mean_variance(mdn_params)
 
-        assert labels.shape == pred_dtime.shape
-        assert labels.shape == pred_dtime_var.shape
+        pred_q99a = self.mdn.quantile(mdn_params,q=0.005)
+        pred_q99b = self.mdn.quantile(mdn_params,q=0.995)
 
-        return (pred_dtime,pred_dtime_var), (None,None), (labels, None), (pred_q7, pred_q9, pred_q99, pred_q999), seq_obj.tgt_non_pad_mask, None
+        pred_q9a = self.mdn.quantile(mdn_params,q=0.05)
+        pred_q9b = self.mdn.quantile(mdn_params,q=0.95)
+
+        pred_q7a = self.mdn.quantile(mdn_params,q=0.15)
+        pred_q7b = self.mdn.quantile(mdn_params,q=0.85)
+
+        pred_q5a = self.mdn.quantile(mdn_params,q=0.25)
+        pred_q5b = self.mdn.quantile(mdn_params,q=0.75)
+
+        pred_mask = seq_obj.tgt_non_pad_mask
+        
+        assert label.shape == pred_mean.shape
+        assert label.shape == pred_var.shape
+
+        return (pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b), label, (interarrival_time_src_seqs, len_src_seqs), pred_mask
 
 
 def subsequent_mask(size: int) -> torch.Tensor:

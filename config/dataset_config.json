@@ -1,0 +1,153 @@
+{
+    "s61-64_e2e_train" : {
+        "main_ds_name" : "main_train",
+        "time_masks": [
+            [0.1,0.9],
+            [0.1,0.9],
+            [0.1,0.9],
+            [0.1,0.9]
+        ],
+        "only_arrivals": true,
+        "window_config": {
+            "type": "event",
+            "size": 20,
+            "prediction_steps": 20
+        },
+        "dataset_size_max": 20000,
+        "split_ratios": [
+            0.8,
+            0.1,
+            0.1
+        ]
+    },
+    "intervals_e2e_train" : {
+        "main_ds_name" : "main_train_2",
+        "time_masks": [
+            [ "database_s55.db", [0.1,0.18] ],
+            [ "database_s60.db", [0.1,0.18] ],
+            [ "database_s65.db", [0.1,0.18] ],
+            [ "database_s64.db", [0.1,0.18] ]
+        ],
+        "only_arrivals": true,
+        "window_config": {
+            "type": "event",
+            "history": 20,
+            "prediction": 20
+        },
+        "dataset_size_max": 13000,
+        "split_ratios": [
+            0.69,
+            0.30,
+            0.01
+        ]
+    },
+    "intervals_e2e_train_3" : {
+        "main_ds_name" : "main_train_3",
+        "time_masks": [
+            [ "database_s55.db", [0.4,0.58] ],
+            [ "database_s60.db", [0.4,0.58] ],
+            [ "database_s65.db", [0.4,0.58] ],
+            [ "database_s64.db", [0.4,0.58] ]
+        ],
+        "only_arrivals": true,
+        "window_config": {
+            "type": "event",
+            "history": 20,
+            "prediction": 20
+        },
+        "dataset_size_max": 20250,
+        "split_ratios": [
+            0.1234,
+            0.037,
+            0.8395
+        ]
+    },
+    "intervals_e2e_train_4" : {
+        "main_ds_name" : "main_dataset",
+        "time_masks": [
+            [ "database_s55.db", [0.1,0.7] ],
+            [ "database_s60.db", [0.1,0.7] ],
+            [ "database_s65.db", [0.1,0.7] ],
+            [ "database_s64.db", [0.1,0.7] ]
+        ],
+        "only_arrivals": true,
+        "window_config": {
+            "type": "event",
+            "history": 20,
+            "prediction": 20
+        },
+        "dataset_size_max": 100000,
+        "split_ratios": [
+            0.01,
+            0.01,
+            0.98
+        ]
+    },
+    "intervals_e2e_eval" : {
+        "main_ds_name" : "main_eval_2",
+        "time_masks": [
+            [ "database_s55.db", [0.2,0.38] ],
+            [ "database_s60.db", [0.2,0.38] ],
+            [ "database_s65.db", [0.2,0.38] ],
+            [ "database_s64.db", [0.2,0.38] ]
+        ],
+        "only_arrivals": true,
+        "window_config": {
+            "type": "event",
+            "history": 20,
+            "prediction": 20
+        },
+        "dataset_size_max": 30000,
+        "split_ratios": [
+            0.01,
+            0.01,
+            0.98
+        ]
+    },
+    "intervals_e2e_train_time" : {
+        "main_ds_name" : "main_train",
+        "time_masks": [
+            [ "database_s55.db", [0.1,0.18] ],
+            [ "database_s60.db", [0.1,0.18] ],
+            [ "database_s64.db", [0.1,0.18] ],
+            [ "database_s65.db", [0.1,0.18] ],
+            [ "database_s66.db", [0.1,0.18] ],
+            [ "database_s72.db", [0.1,0.18] ]
+        ],
+        "only_arrivals": true,
+        "window_config": {
+            "type": "time",
+            "history": 0.25,
+            "prediction": 0.25
+        },
+        "dataset_size_max": 10000,
+        "split_ratios": [
+            0.8,
+            0.1,
+            0.1
+        ]
+    },
+    "intervals_e2e_train_single" : {
+        "main_ds_name" : "main_train",
+        "time_masks": [
+            [ "database_s55.db", [0.1,0.18] ],
+            [ "database_s60.db", [0.1,0.18] ],
+            [ "database_s64.db", [0.1,0.18] ],
+            [ "database_s65.db", [0.1,0.18] ],
+            [ "database_s66.db", [0.1,0.18] ],
+            [ "database_s72.db", [0.1,0.18] ]
+        ],
+        "only_arrivals": true,
+        "window_config": {
+            "type": "event",
+            "history": 0,
+            "prediction": 1
+        },
+        "dataset_size_max": 10000,
+        "split_ratios": [
+            0.8,
+            0.1,
+            0.1
+        ]
+    }
+}

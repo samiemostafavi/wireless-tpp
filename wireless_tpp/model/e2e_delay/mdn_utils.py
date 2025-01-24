@@ -1,5 +1,5 @@
 import torch
-import torch.distributions as D
+from torch.distributions import AffineTransform
 from torch import nn
 import math
 
@@ -73,8 +73,8 @@ class MixtureDistribution(nn.Module):
             forward (bool): whether to compute the forward pass
 
         Returns:
-            tensor: negative log-likelihood [batch_size]
-            tensor: number of predictions [batch_size]
+            tensor: negative log-likelihood [seq_len]
+            tensor: number of predictions [seq_len]
         """
         pad_mask = pad_mask.float()
         
@@ -89,10 +89,9 @@ class MixtureDistribution(nn.Module):
         # Apply prediction mask to filter out invalid positions
         assert labels.shape == pred_dist.mean.shape # [batch_size, seq_len]
         dtime_ll = pred_dist.log_prob(labels) * pad_mask
-        nll = -dtime_ll.sum()
+        nll = -dtime_ll # do not sum over the batch, will do it later in the wrapper
 
-        num_predictions = pad_mask.sum()
-        return nll, num_predictions
+        return nll, pad_mask
     
 
     def mean_variance(self, raw_params):
@@ -130,11 +129,10 @@ class MixtureDistribution(nn.Module):
         weights = pred_dist.weights # [B, T, K]
 
         # 2) Call the bisection or any numeric root finder
-        x_q = mixture_quantile(locs, scales, weights, q)
-        x_q_transformed = pred_dist.transforms[0](x_q)
+        x_q = mixture_quantile(locs, scales, weights, q, pred_dist.transforms[0])
 
         # 3) Return the qth-quantile
-        return x_q_transformed
+        return x_q
     
 
 def normal_cdf(z):
@@ -157,12 +155,13 @@ def mixture_cdf(x, locs, scales, weights):
     mix_cdf = (cdf_vals * weights).sum(dim=-1)  # sum over mixture components
     return mix_cdf
 
-def mixture_quantile(locs, scales, weights, q, max_iter=30):
+def mixture_quantile(locs, scales, weights, q, transform : AffineTransform, max_iter=30):
     """
     Numerically find the quantile x_q s.t. mixture_cdf(x_q) = q.
 
     locs, scales, weights each shape: [B, T, K]
     q in (0,1): the quantile
+    transform: the affine transformation applied to the delay values
     Returns:
       x_q: [B, T], the q-th quantile for each mixture distribution
     """
@@ -183,4 +182,6 @@ def mixture_quantile(locs, scales, weights, q, max_iter=30):
 
     # After ~30 iterations, left ~ right => the quantile
     x_q = 0.5 * (left + right)
-    return x_q
+    x_q_transformed = transform(x_q)
+
+    return x_q_transformed

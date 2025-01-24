@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.distributions as D
 from torch import nn
@@ -202,7 +203,7 @@ class RecurrentE2E(TorchBaseModel):
                 all_preds = torch.stack(all_preds, dim=1)
                 mdn_params = self.mdn_head(all_preds)
 
-        num_predictions = seq_obj.tgt_non_pad_mask.float().sum()
+        num_predictions = seq_obj.tgt_non_pad_mask.float().sum(axis=0)
         return mdn_params, num_predictions
 
     
@@ -249,25 +250,39 @@ class RecurrentE2E(TorchBaseModel):
         labels = seq_obj.tgt_dtime_seqs_transformed
         # labels: [batch_size, tgt_seq_len]
 
-        nll, num_predictions_nll = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask)
-        assert num_predictions.item() == num_predictions_nll.item()
+        nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask)
+        num_predictions_nll = nll_mask.sum(axis=0)
+        assert np.array_equal(num_predictions.cpu().numpy(), num_predictions_nll.cpu().numpy())
 
-        return nll, num_predictions, None, None
+        return nll, nll_mask
 
 
-    def predict_mean_variance(self, batch):
+    def predict(self, batch):
 
         seq_obj = SequenceSeperate(batch, self.device, self.src_seq_len, self.tgt_seq_len, self.delay_embedding.dtime_transform, self.delay_embedding.len_transform, self.delay_embedding.interarrival_time_transform)
-        labels = seq_obj.tgt_dtime_seqs_transformed
+        label = seq_obj.tgt_dtime_seqs_transformed
+
+        interarrival_time_src_seqs = seq_obj.src_interarrival_time_seqs_transformed
+        len_src_seqs = seq_obj.src_len_seqs_transformed
 
         mdn_params, num_predictions = self.forward(seq_obj)
-        pred_dtime, pred_dtime_var = self.mdn.mean_variance(mdn_params)
-        pred_q7 = self.mdn.quantile(mdn_params,q=0.7)
-        pred_q9 = self.mdn.quantile(mdn_params,q=0.9)
-        pred_q99 = self.mdn.quantile(mdn_params,q=0.99)
-        pred_q999 = self.mdn.quantile(mdn_params,q=0.999)
+        pred_mean, pred_var = self.mdn.mean_variance(mdn_params)
 
-        assert labels.shape == pred_dtime.shape
-        assert labels.shape == pred_dtime_var.shape
+        pred_q99a = self.mdn.quantile(mdn_params,q=0.005)
+        pred_q99b = self.mdn.quantile(mdn_params,q=0.995)
 
-        return (pred_dtime,pred_dtime_var), (None,None), (labels, None), (pred_q7, pred_q9, pred_q99, pred_q999), seq_obj.tgt_non_pad_mask, None
+        pred_q9a = self.mdn.quantile(mdn_params,q=0.05)
+        pred_q9b = self.mdn.quantile(mdn_params,q=0.95)
+
+        pred_q7a = self.mdn.quantile(mdn_params,q=0.15)
+        pred_q7b = self.mdn.quantile(mdn_params,q=0.85)
+
+        pred_q5a = self.mdn.quantile(mdn_params,q=0.25)
+        pred_q5b = self.mdn.quantile(mdn_params,q=0.75)
+
+        pred_mask = seq_obj.tgt_non_pad_mask
+
+        assert label.shape == pred_mean.shape
+        assert label.shape == pred_var.shape
+
+        return (pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b), label, (interarrival_time_src_seqs, len_src_seqs), pred_mask
