@@ -5,7 +5,6 @@ import yaml, pickle, json
 import numpy as np
 
 from wireless_tpp.config_factory import Config
-from wireless_tpp.runner import TPPRunnerScheduling
 from wireless_tpp.utils import logger
 
 def generate_predictions(args):

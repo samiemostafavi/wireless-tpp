@@ -13,9 +13,14 @@ from edaf.core.uplink.analyze_packet import ULPacketAnalyzer
 from edaf.core.uplink.analyze_channel import ULChannelAnalyzer
 from edaf.core.uplink.analyze_scheduling import ULSchedulingAnalyzer
 
-from src.link_quality import extract_link_quality_events, window_history_segment_events, window_history_mcs_decision_events
-from src.packet_arrival import extract_packet_arrival_events, window_history_arrival_events
-from src.scheduling import extract_scheduling_events, window_history_scheduling_events
+#from src.link_quality import extract_link_quality_events, window_history_segment_events, window_history_mcs_decision_events
+#from src.packet_arrival import extract_packet_arrival_events, window_history_arrival_events
+#from src.e2e import extract_scheduling_events, window_history_scheduling_events
+
+NUM_RBS_PADDING = 106
+NUM_SYMBOLS_PADDING = 14
+MRETX_PADDING = 4
+RFAILED_PADDING = 2
 
 if not os.getenv('DEBUG'):
     logger.remove()
@@ -836,3 +841,129 @@ def create_fulltf_training_dataset(args):
     # Save the dataset in a pickle file
     with open(results_folder_addr / 'dataset.pkl', 'wb') as f:
         pickle.dump(dataset, f)
+
+def sum_mretx_segments(rlc_attempts):
+    return sum([(len(rlc_attempt['mac.attempts'])-1) for rlc_attempt in rlc_attempts])
+
+def sum_rfailed_segments(rlc_attempts):
+    return sum([int(rlc_attempt['repeated']) for rlc_attempt in rlc_attempts])
+
+
+def extract_scheduling_events(packet_analyzer, sched_analyzer, begin_ts, end_ts, exp_config):
+
+    slots_duration_ms = exp_config['slots_duration_ms']
+    num_slots_per_frame = exp_config['slots_per_frame']
+    total_prbs_num = exp_config['total_prbs_num']
+    symbols_per_slot = exp_config['symbols_per_slot']
+    scheduling_map_num_integers = exp_config['scheduling_map_num_integers']
+    max_num_frames = exp_config['max_num_frames']
+    scheduling_time_ahead_ms = exp_config['scheduling_time_ahead_ms']
+    max_harq_attempts = exp_config['max_harq_attempts']
+
+    # analyze packets
+    packets = packet_analyzer.figure_packettx_from_ts(begin_ts, end_ts)
+
+    last_event_ts = 0
+    this_db_events_v1 = []
+    logger.info(f"Extract scheduling events")
+    prev_mcs_index = 0
+    for idx, packet in enumerate(packets):
+        print(f"\rProcessing packet {idx + 1}/{len(packets)} ({(idx + 1) / len(packets) * 100:.2f}%) with packet sn: {packet['sn']}", end="")
+        if packet['rlc.attempts'][0]['mac.attempts'][0]['mcs'] == 0:
+            mcs_index = prev_mcs_index
+        else:
+            mcs_index = packet['rlc.attempts'][0]['mac.attempts'][0]['mcs']
+            prev_mcs_index = packet['rlc.attempts'][0]['mac.attempts'][0]['mcs']
+
+        frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
+            timestamp=packet['ip.in_t'],
+            SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
+        )
+        time_since_frame0 = frame_num*num_slots_per_frame*slots_duration_ms + slot_num*slots_duration_ms
+        time_since_last_event = time_since_frame0-last_event_ts
+        if time_since_last_event < 0:
+            time_since_last_event = time_since_frame0
+        last_event_ts = time_since_frame0
+
+        # if something is wrong with the end-to-end timestamps, use rlc timestamps
+        use_rlc_timestamps = False
+        latest_rlc_out_t = packet['ip.out_t']
+        if (packet['ip.out_t'] - packet['ip.in_t']) < 0 or (packet['ip.out_t'] - packet['ip.in_t']) > 1:
+            latest_rlc_out_t = max([packet['rlc.attempts'][i]['mac.out_t'] for i in range(len(packet['rlc.attempts'])) if packet['rlc.attempts'][i]['mac.out_t'] is not None])
+            use_rlc_timestamps = True
+
+        # add the packet arrival event
+        this_db_events_v1.append(
+            {
+                'segment' : -1, # packet arrival is not a segment
+                'packet_id' : idx,
+                'depart_timestamp' : packet['ip.out_t'] if not use_rlc_timestamps else latest_rlc_out_t,
+                'timestamp' : packet['ip.in_t'] if not use_rlc_timestamps else packet['rlc.attempts'][0]['mac.in_t'],
+                'slot' : slot_num,
+                'len' : packet['len'],
+                'mcs_index' : mcs_index,
+                'mretx' : sum_mretx_segments(packet['rlc.attempts']),
+                'rfailed' : sum_rfailed_segments(packet['rlc.attempts']),
+                'num_rbs' : NUM_RBS_PADDING,
+                'num_symbols' : NUM_SYMBOLS_PADDING,
+                'time_since_start' : time_since_frame0,
+                'time_since_last_event' : time_since_last_event,
+            }
+        )
+        for idx2, rlc_attempt in enumerate(packet['rlc.attempts']):
+
+            frame_start_ts, frame_num, slot_num = sched_analyzer.find_frame_slot_from_ts(
+                timestamp=rlc_attempt['mac.in_t'],
+                SCHED_OFFSET_S=scheduling_time_ahead_ms/1000 # 4ms which is 8*slot_duration_ms
+            )
+            time_since_frame0 = frame_num*num_slots_per_frame*slots_duration_ms + slot_num*slots_duration_ms
+            time_since_last_event = time_since_frame0-last_event_ts
+            if time_since_last_event < 0:
+                time_since_last_event = time_since_frame0
+            last_event_ts = time_since_frame0
+
+            if rlc_attempt['mac.attempts'][0]['mcs'] == 0:
+                mcs_index = prev_mcs_index
+            else:
+                mcs_index = rlc_attempt['mac.attempts'][0]['mcs']
+                prev_mcs_index = rlc_attempt['mac.attempts'][0]['mcs']
+            this_db_events_v1.append(
+                {
+                    'segment' : idx2,
+                    'packet_id' : idx,
+                    'timestamp' : rlc_attempt['mac.in_t'],
+                    'depart_timestamp' : -1,
+                    'slot' : slot_num,
+                    'len' : rlc_attempt['len'],
+                    'mcs_index' : mcs_index,
+                    'mretx' : len(rlc_attempt['mac.attempts'])-1,
+                    'rfailed' : int(not rlc_attempt['acked']),
+                    'num_rbs' : rlc_attempt['mac.attempts'][0]['rbs'],
+                    'num_symbols' : rlc_attempt['mac.attempts'][0]['symbols'],
+                    'time_since_start' : time_since_frame0,
+                    'time_since_last_event' : time_since_last_event,
+                }
+            )
+
+            
+    print("\n", end="")
+
+    # sort the events based on timestamp
+    this_db_events_v1 = sorted(this_db_events_v1, key=lambda x: x['timestamp'], reverse=False)
+
+    return this_db_events_v1[1:] # remove the first event
+
+def window_history_scheduling_events(sched_event_m1_id, scheduling_events, window_size_events):
+    m1 = sched_event_m1_id
+    events_window = []
+    if m1 - window_size_events < 0 or m1 + 1 > len(scheduling_events):
+        return []
+    for pos, event in enumerate(scheduling_events[m1-window_size_events:m1+1]):
+        events_window.append(
+            {
+                'idx_event' : pos,
+                'type_event': event['segment']+1,
+                **event,
+            }
+        )
+    return events_window   

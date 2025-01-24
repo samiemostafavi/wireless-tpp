@@ -76,11 +76,11 @@
             "history": 20,
             "prediction": 20
         },
-        "dataset_size_max": 100000,
+        "dataset_size_max": 62500,
         "split_ratios": [
-            0.01,
-            0.01,
-            0.98
+            0.8,
+            0.19,
+            0.01
         ]
     },
     "intervals_e2e_eval" : {
