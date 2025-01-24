@@ -9,9 +9,7 @@ Create an entry in `config/e2e_dataset_config.json` with a key for example `s61-
 
 Create the main dataset (takes time usually). The following commands use the time masks in the dataset config.
 ```
-python main.py -t e2e -u create_training_dataset -v -s data/s61-64_results -c config/e2e_dataset_config.json -g s61-64_e2e_train -n main_train
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/e2e_dataset_config.json -g intervals_e2e_train -n main_train
-python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/e2e_dataset_config.json -g intervals_e2e_train -n main_train_2
 ```
 
 Create training sub-dataset (which selects entries from the main dataset according to the specified size randomly) and it is fast. Make sure change the `dataset_size_max` setting in the dataset config file.
@@ -27,7 +25,7 @@ python main.py -t e2e -u create_training_dataset -v -s data/s61-64_results -c co
 By setting "only_arrivals" in the dataset config we can have sequences of just arrival events where the time_since_last_event is actually the delay of the packet.
 
 
-## 3. Train an e2e model <a href='#top'>[Back to Top]</a>
+## 2. Train an e2e model <a href='#top'>[Back to Top]</a>
 
 Train a model. Here we use a full transformer MDN model.
 Modify the e2e_training_config.yaml file with the model configuration and dataset that you want to use for trianing.
@@ -35,7 +33,7 @@ Modify the e2e_training_config.yaml file with the model configuration and datase
 python main.py -t e2e -u train_model -f -c config/e2e_training_config.yaml -i e2e_intervals_10k_transformer
 ```
 
-## 4. Evaluate an e2e model <a href='#top'>[Back to Top]</a>
+## 3. Evaluate an e2e model <a href='#top'>[Back to Top]</a>
 ```
 python main.py -t e2e -u evaluate_model -s data/intervals_results -c config/e2e_prediction_config.json -g intervals_e2e_eval -n test10k_oa_single_mlp -i 2199105_140148183655040_250120-184431
 python main.py -t e2e -u evaluate_model -s data/intervals_results -c config/e2e_prediction_config.json -g intervals_e2e_eval -n test10k_oa_40ev_rnn -i 2199105_140148183655040_250120-184431
