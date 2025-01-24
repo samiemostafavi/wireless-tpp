@@ -29,7 +29,7 @@ First, modify or create the `config/e2e_training_config.yaml` file. Make sure in
 
 Train a model using the following command and specifying the model section in the yaml file (`-i`).
 ```
-python main.py -t e2e -u train_model -f -c config/e2e_training_config.yaml -i e2e_intervals_10k_transformer
+python main.py -t e2e -u train_model -f -c config/training_config.yaml -i e2e_intervals_10k_transformer
 ```
 
 ## 3. Evaluate an e2e model <a href='#top'>[Back to Top]</a>
