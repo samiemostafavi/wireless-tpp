@@ -1,57 +1,6 @@
 pipeline_config_id: runner_config
 
 data:
-  s61-64_e2e_5k:
-    train_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k/train.pkl
-    valid_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k/dev.pkl
-    test_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k/test.pkl
-    data_specs:
-      num_event_types: 7 # max number of segments + 1
-      pad_token_id: 7
-      padding_strategy: do_not_pad
-
-  s61-64_e2e_5k_oa:
-    train_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k_oa/train.pkl
-    valid_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k_oa/dev.pkl
-    test_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k_oa/test.pkl
-    data_specs:
-      num_event_types: 8 # max number of segments + 1
-      pad_token_id: 8
-      padding_strategy: do_not_pad
-
-  intervals_e2e_10k_oa_time:
-    train_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_time/train.pkl
-    valid_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_time/dev.pkl
-    test_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_time/test.pkl
-    data_specs:
-      num_event_types: 1
-      pad_token_id: 1
-      max_len: 33
-      padding_side: left # very important for encoder transformer model
-      padding_strategy: max_length
-      model_input_names: ["slot_seqs", "len_seqs", "mcs_seqs", "mretx_seqs", "rfailed_seqs", "num_rbs_seqs", "time_seqs", "time_delta_seqs", "type_seqs", "label_mask_seqs", "batch_non_pad_mask"] # no attention_mask
-
-  intervals_e2e_10k_oa_single:
-    train_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_single/train.pkl
-    valid_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_single/dev.pkl
-    test_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_single/test.pkl
-    data_specs:
-      num_event_types: 1
-      pad_token_id: 1
-      padding_strategy: do_not_pad
-
-  intervals_e2e_10k_oa_1s_time:
-    train_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_1s_time/train.pkl
-    valid_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_1s_time/dev.pkl
-    test_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_1s_time/test.pkl
-    data_specs:
-      num_event_types: 1
-      pad_token_id: 1
-      max_len: 67
-      padding_side: left # very important for encoder transformer model
-      padding_strategy: max_length
-      model_input_names: ["slot_seqs", "len_seqs", "mcs_seqs", "mretx_seqs", "rfailed_seqs", "num_rbs_seqs", "time_seqs", "time_delta_seqs", "type_seqs", "interarrival_time_seqs", "label_mask_seqs", "batch_non_pad_mask"] # no attention_mask
-
   intervals_e2e_10k_oa_40_event:
     train_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa4_40_event/train.pkl
     valid_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa4_40_event/dev.pkl
@@ -60,28 +9,6 @@ data:
       num_event_types: 1 # max number of segments + 1
       pad_token_id: 1
       padding_strategy: do_not_pad
-
-  intervals_e2e_10k_oa_p5s_time:
-    train_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_p5s_time/train.pkl
-    valid_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_p5s_time/dev.pkl
-    test_dir:  ./data/intervals_results/e2e/datasets/sub_train10k_oa_p5s_time/test.pkl
-    data_specs:
-      num_event_types: 1
-      pad_token_id: 1
-      max_len: 33
-      padding_side: right # very important for encoder transformer model: left, for rnn: right
-      padding_strategy: max_length
-      model_input_names: ["slot_seqs", "len_seqs", "mcs_seqs", "mretx_seqs", "rfailed_seqs", "num_rbs_seqs", "time_seqs", "time_delta_seqs", "type_seqs", "interarrival_time_seqs", "label_mask_seqs", "batch_non_pad_mask"] # no attention_mask
-
-  s61-64_e2e_20k_oa:
-    train_dir:  ./data/s61-64_results/e2e/datasets/sub_train20k_oa/train.pkl
-    valid_dir:  ./data/s61-64_results/e2e/datasets/sub_train20k_oa/dev.pkl
-    test_dir:  ./data/s61-64_results/e2e/datasets/sub_train20k_oa/test.pkl
-    data_specs:
-      num_event_types: 8 # max number of segments + 1
-      pad_token_id: 8
-      padding_strategy: do_not_pad
-
 
 e2e_intervals_10k_mlp:
   base_config:
