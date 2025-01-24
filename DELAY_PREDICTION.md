@@ -9,14 +9,14 @@ Create an entry in `config/e2e_dataset_config.json` with a key for example `s61-
 
 Create the main dataset (takes time usually). The following commands use the time masks in the dataset config.
 ```
-python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/e2e_dataset_config.json -g intervals_e2e_train -n main_train
+python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n main_train
 ```
 
 Create training sub-dataset (which selects entries from the main dataset according to the specified size randomly) and it is fast. Make sure change the `dataset_size_max` setting in the dataset config file.
 ```
-python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/e2e_dataset_config.json -g intervals_e2e_train -n sub_train5k -f
-python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/e2e_dataset_config.json -g intervals_e2e_train -n sub_train10k -f
-python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/e2e_dataset_config.json -g intervals_e2e_train -n sub_train20k -f
+python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train5k -f
+python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train10k -f
+python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train20k -f
 ```
 
 By setting "only_arrivals" in the dataset config we can have sequences of just arrival events where the time_since_last_event is actually the delay of the packet.
