@@ -4,23 +4,25 @@ This predictor takes a history of previous block transmission events plus packet
 
 Create an entry in `config/e2e_dataset_config.json` with a key for example `intervals_e2e_train` to store dataset creation configs.
 
-## 1. Create an e2e dataset <a href='#top'>[Back to Top]</a>
-
+## 1. Create a packet delay dataset <a href='#top'>[Back to Top]</a>
 
 Create the main dataset (takes time usually). The following commands use the time masks in the dataset config.
+Here the code will look up the `time_masks` setting and `only_arrivals`.
+Time masks will filter which part of the experiment to extract data from and only_arrivals ignores block transmission attempts and we will only have sequences of arrival events with the `time_since_last_event` representing the delay of the packet.
 ```
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n main_train
 ```
+Note: for this command, -n “NAME” should match with “main_ds_name: NAME” in the corresponding json entry.
 
-Create training sub-dataset (which selects entries from the main dataset according to the specified size randomly) and it is fast. Make sure change the `dataset_size_max` setting in the dataset config file.
+Create training sub-dataset using the same command but with `-f` argument (which randomly selects entries from the main dataset according to the specified size and sequence length). 
+This command is fast compared to the previous one.
+Set the `split_ratios`, `window_config`, and the number of samples `dataset_size_max` in the dataset config file according to your setting and run:
 ```
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train5k -f
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train10k -f
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train20k -f
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train50k -f
 ```
-
-By setting "only_arrivals" in the dataset config we ignore block transmission attempts and we will only have sequences of arrival events with the `time_since_last_event` is actually the delay of the packet.
 
 
 ## 2. Train a delay prediction model <a href='#top'>[Back to Top]</a>

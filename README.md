@@ -69,6 +69,7 @@ Place EDAF folders and the experiment conf file in a folder (source folder). Pre
 ```
 python main.py -t preprocess_edaf -s data/s63_results
 ```
+In addition to the database files, there should be a json containing the experiment parameters: `experiment_config.json`.
 
 
 ### Step 3. Train a Model and Predict

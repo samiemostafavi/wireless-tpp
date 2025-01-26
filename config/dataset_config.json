@@ -73,14 +73,14 @@
         "only_arrivals": true,
         "window_config": {
             "type": "event",
-            "history": 20,
-            "prediction": 20
+            "history": 100,
+            "prediction": 100
         },
-        "dataset_size_max": 62500,
+        "dataset_size_max": 100000,
         "split_ratios": [
-            0.8,
-            0.19,
-            0.01
+            0.01,
+            0.01,
+            0.98
         ]
     },
     "intervals_e2e_eval" : {

@@ -1,0 +1,12 @@
+{
+    "total_prbs_num": 106,
+    "symbols_per_slot": 14,
+    "slots_per_frame": 20,
+    "slots_duration_ms": 0.5,
+    "scheduling_map_num_integers": 4,
+    "max_num_frames": 1024,
+    "scheduling_time_ahead_ms" : 2,
+    "max_harq_attempts": 3,
+    "gnb_command" : "",
+    "ue_command" : ""
+}
