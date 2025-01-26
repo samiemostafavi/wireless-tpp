@@ -131,7 +131,7 @@ class TorchModelWrapper:
                 loss, loss_mask = self.model.loglike_loss(batch, forward=is_training)
 
         # Assume we dont do prediction on train set
-        pred_mean, pred_var, pred_q7, pred_q9, pred_q99, pred_q999, label, interarrival_time_seqs, len_seqs = None, None, None, None, None, None, None, None, None
+        pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b, label, interarrival_time_seqs, len_seqs = None, None, None, None, None, None, None, None, None, None, None, None, None
 
         # update grad
         if is_training:

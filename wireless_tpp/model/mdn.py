@@ -75,7 +75,9 @@ class NormalMixtureDistribution(TransformedDistribution):
 
     def __init__(self, locs, log_scales, log_weights, mean_val, std_val, validate_args=None):
         mixture_dist = D.Categorical(logits=log_weights)
-        component_dist = Normal(loc=locs, scale=torch.exp(log_scales))
+        scale = torch.exp(log_scales)
+        scale = clamp_preserve_gradients(scale, 1e-7, 1e7)
+        component_dist = Normal(loc=locs, scale=scale)
         GMM = MixtureSameFamily(mixture_dist, component_dist)
         if mean_val == 0.0 and std_val == 1.0:
             transforms = []
