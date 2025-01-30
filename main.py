@@ -43,18 +43,13 @@ def main():
     sub_parser.add_argument("-g", "--configname", help="Specify the configuration name in the configuration file")
     sub_parser.add_argument("-n", "--name", help="Specify the name of the dataset")
     sub_parser.add_argument("-i", "--id", help="Specify the training id")
+    sub_parser.add_argument("-r", "--randomnum", help="Specify the number of random samples")
     sub_parser.add_argument("-m", "--segment", help="Specify the segment number to plot")
     sub_parser.add_argument("-p", "--predict", choices=["probabilistic","sampling"],help="Specify the prediction method")
     sub_parser.add_argument("-k", "--notypemapping", action="store_true", help="Specify if in arrival create dataset, no type mapping should be done")
     final_args = sub_parser.parse_args(remaining_args)
 
-    if args.task == "link_quality":
-        run_link_quality(final_args)
-    elif args.task == "packet_arrival":
-        run_packet_arrival(final_args)
-    elif args.task == "scheduling":
-        run_scheduling(final_args)
-    elif args.task == "e2e":
+    if args.task == "e2e":
         run_e2e(final_args)
     else:
         print("Invalid task specified")

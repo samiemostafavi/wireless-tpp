@@ -24,6 +24,12 @@ python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train50k -f
 ```
 
+You can also pass `-r 2` argument to specify for how many times the random selection of sequences from the main datasets to be done. `-r 2` will create 2 subdatasets, simillar size and profile only 2 different sample sets.
+```
+python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train5k -f -r 2
+```
+This doesn't work on main dataset creation.
+
 
 ## 2. Train a delay prediction model <a href='#top'>[Back to Top]</a>
 
@@ -31,8 +37,9 @@ First, modify or create the `config/e2e_training_config.yaml` file. Make sure in
 
 Train a model using the following command and specifying the model section in the yaml file (`-i`).
 ```
-python main.py -t e2e -u train_model -f -c config/training_config.yaml -i e2e_intervals_10k_transformer
+python main.py -t e2e -u train_model -s data/s61-64_results -c config/training_config_s61-64.yaml -i mlp -n 1k
 ```
+Here `-n` specifies the dataset id in the yaml file to train the model with and `-i` sepcifies the model in the config file.
 
 ## 3. Evaluate an e2e model <a href='#top'>[Back to Top]</a>
 ```
@@ -44,13 +51,12 @@ python main.py -t e2e -u evaluate_model -s data/intervals_results -c config/e2e_
 
 ## 4. Validate a trained scheduling model <a href='#top'>[Back to Top]</a>
 
-Using the following commands, you can visually validate how the predictor works. We plot random instances in the test part of the training dataset or any dataset specified in the configuration json (if the dataset name and id is left empty, we use the training dataset).
-Make sure you have an entry in the `scheduling_prediction_config.json` config file with the prediction configurations like number of samples etc.
+Using the following commands, you can visually validate how the predictor works. We plot random instances in the test part of the dataset or any dataset specified in the configuration json (if the dataset name and id is left empty, we use the training dataset).
+Make sure you have an entry in the `prediction_config.json` config file with the prediction configurations like number of samples etc.
 We can either do PDF prediction or sampling prediction. You can run probabilistic predictions (PDF) using `-p probabilistic` or sample the predictor `-p sampling` in the prediction command below.
 The arguments `-n NAME` and `-i ID` are corresponding to the trained model that you desire to validate.
 ```
-python main.py -t scheduling -u generate_predictions -s data/s63_results -p probabilistic -c config/prediction_config.json -g s63_scheduling -n test0 -i 1643939_139725269271168_250108-063415
-python main.py -t scheduling -u generate_predictions -s data/multi_size_scheduling -p probabilistic -c config/prediction_config.json -g multi_size_scheduling_eval -n test10k -i 1679990_140223206195840_250108-185841
+python main.py -t e2e -u generate_predictions -s data/intervals_results -p probabilistic -c config/prediction_config.json -g intervals_e2e_eval -n test10k_200_final_retx_transformer -i 3789998_140084062102144_250124-210058
 ```
 After the predictions are done, we will have in `scheduling/prediction_results/NAME/PREDICTION_ID` folder, all the information and `pred.pkl` file that holds the produced results.
 

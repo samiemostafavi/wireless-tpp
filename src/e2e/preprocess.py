@@ -589,6 +589,12 @@ def create_fulltf_training_subdataset(args):
     # read experiment configuration
     folder_addr = Path(args.source)
 
+    # if randomnum is specified, create that many number of random sub datasets
+    randomnum = None
+    if args.randomnum:
+        randomnum = args.randomnum
+        logger.info(f"Creating {randomnum} number of random sub datasets")
+
     # this means we have a main dataset and now we need to create training datasets
     dataset_size = dataset_config["dataset_size_max"]
     split_ratios = dataset_config["split_ratios"]
@@ -641,7 +647,19 @@ def create_fulltf_training_subdataset(args):
         training_dataset.extend(training_db_dataset)
 
     dataset_size = len(training_dataset)
-    logger.info(f"Total training dataset size: {dataset_size}, saving {sub_dataset_size} random entries with split ratios {split_ratios}")
+    logger.info(f"Total training dataset size: {dataset_size}, saving {sub_dataset_size} random entries with split ratios {split_ratios} in {randomnum if randomnum is not None else 1} sub datasets")
+
+    if randomnum is not None:          
+        for rand_idx in range(int(randomnum)):
+            take_rands_and_save(training_dataset, sub_dataset_size, split_ratios, folder_addr, args, dataset_config, max_sequence_len, max_tgt_seq_len, max_src_seq_len, dim_process, rand_idx)
+    else:
+        take_rands_and_save(training_dataset, sub_dataset_size, split_ratios, folder_addr, args, dataset_config, max_sequence_len, max_tgt_seq_len, max_src_seq_len, dim_process)
+
+    return
+
+
+def take_rands_and_save(training_dataset, sub_dataset_size, split_ratios, folder_addr, args, dataset_config, max_sequence_len, max_tgt_seq_len, max_src_seq_len, dim_process, rand_idx=None):
+    dataset_size = len(training_dataset)
     # give sub_dataset_size random numbers between 0 and dataset_size-1, they should not repeat.
     random_indices = random.sample(range(dataset_size), sub_dataset_size)
     random.shuffle(random_indices)
@@ -670,7 +688,10 @@ def create_fulltf_training_subdataset(args):
     print("train: ", train_num, " - val: ", dev_num, " - test ", test_num)
 
     # prepare the results folder
-    results_folder_addr = folder_addr / 'e2e' / 'datasets' / args.name
+    if rand_idx is not None:
+        results_folder_addr = folder_addr / 'e2e' / 'datasets' / args.name / ("r_" + str(rand_idx))
+    else:
+        results_folder_addr = folder_addr / 'e2e' / 'datasets' / args.name
     results_folder_addr.mkdir(parents=True, exist_ok=True)
     dataset_config['dim_process'] = int(dim_process)
     # Save the dataset config
@@ -715,8 +736,6 @@ def create_fulltf_training_subdataset(args):
     # Save the dictionary to a pickle file
     with open(results_folder_addr / 'test.pkl', 'wb') as f:
         pickle.dump(test_ds, f)
-
-    return
 
 
 def create_fulltf_training_dataset(args):

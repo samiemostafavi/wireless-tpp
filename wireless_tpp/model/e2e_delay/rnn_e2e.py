@@ -71,6 +71,7 @@ class RecurrentE2E(TorchBaseModel):
         # MixtureDistribution
         self.mdn = MixtureDistribution(model_config, self.device)
 
+        self.include_slot_in_tgt = model_config.model_specs['target']['include_slot']
         self.include_mcs_in_tgt = model_config.model_specs['target']['include_mcs']
         self.include_mretx_in_tgt = model_config.model_specs['target']['include_mretx']
         self.include_rfailed_in_tgt = model_config.model_specs['target']['include_rfailed']
@@ -230,7 +231,7 @@ class RecurrentE2E(TorchBaseModel):
             pred_dtime_step, 
             time, 
             interarrival_time, 
-            slot, 
+            slot if self.include_slot_in_tgt else self.slots_pad_id * torch.ones_like(pred_dtime_step, device=self.device, dtype=torch.long),
             mcs if self.include_mcs_in_tgt else self.mcs_pad_id * torch.ones_like(pred_dtime_step, device=self.device, dtype=torch.long), 
             mretx if self.include_mretx_in_tgt else self.mretx_pad_id * torch.ones_like(pred_dtime_step, device=self.device, dtype=torch.long), 
             rfailed if self.include_rfailed_in_tgt else self.rfailed_pad_id * torch.ones_like(pred_dtime_step, device=self.device, dtype=torch.long), 

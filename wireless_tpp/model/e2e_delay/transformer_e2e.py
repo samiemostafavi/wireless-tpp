@@ -75,6 +75,7 @@ class TransformerE2E(TorchBaseModel):
             model_config = model_config
         )
 
+        self.include_slot_in_tgt = model_config.model_specs['target']['include_slot']
         self.include_mcs_in_tgt = model_config.model_specs['target']['include_mcs']
         self.include_mretx_in_tgt = model_config.model_specs['target']['include_mretx']
         self.include_rfailed_in_tgt = model_config.model_specs['target']['include_rfailed']
@@ -151,7 +152,6 @@ class TransformerE2E(TorchBaseModel):
             
             # prediction linear layer
             self.mdn_head = nn.Linear(self.d_model, self.mdn.num_params, device = self.device)
-
 
     def encode(self, seq_obj : SequenceSeperate):
         """Call the model
@@ -257,7 +257,7 @@ class TransformerE2E(TorchBaseModel):
             seq_obj.dtime_seqs[:, idy:idx] if is_teacher_forcing_now else torch.ones_like(tmp, device=self.device, dtype=torch.long)*(-100.0),
             seq_obj.time_seqs[:, idy:idx], 
             seq_obj.interarrival_time_seqs[:, idy:idx], 
-            seq_obj.slot_seqs[:, idy:idx],
+            seq_obj.slot_seqs[:, idy:idx] if self.include_slot_in_tgt else self.slots_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long),
             seq_obj.mcs_seqs[:, idy:idx] if self.include_mcs_in_tgt else self.mcs_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
             seq_obj.mretx_seqs[:, idy:idx] if self.include_mretx_in_tgt else self.mretx_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
             seq_obj.rfailed_seqs[:, idy:idx] if self.include_rfailed_in_tgt else self.rfailed_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
@@ -318,7 +318,7 @@ class TransformerE2E(TorchBaseModel):
                 pred_dtime_step, 
                 time, 
                 interarrival_time, 
-                slot, 
+                slot if self.include_slot_in_tgt else self.slots_pad_id * torch.ones_like(pred_dtime_step, device=self.device, dtype=torch.long),
                 mcs if self.include_mcs_in_tgt else self.mcs_pad_id * torch.ones_like(pred_dtime_step, device=self.device, dtype=torch.long), 
                 mretx if self.include_mretx_in_tgt else self.mretx_pad_id * torch.ones_like(pred_dtime_step, device=self.device, dtype=torch.long), 
                 rfailed if self.include_rfailed_in_tgt else self.rfailed_pad_id * torch.ones_like(pred_dtime_step, device=self.device, dtype=torch.long), 
