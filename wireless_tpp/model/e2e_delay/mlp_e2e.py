@@ -46,6 +46,9 @@ class MLPE2E(TorchBaseModel):
         self.num_rbs_types = model_config.model_specs['types_and_paddings']['num_rbs'][0] 
         self.rbs_pad_id = model_config.model_specs['types_and_paddings']['num_rbs'][1]
 
+        # only matters during prediction
+        self.tgt_seq_len = model_config.model_specs['tgt_seq_len']
+
         self.delay_embedding = DelayEmbedding(
             d_model=self.d_model,
             device = self.device,

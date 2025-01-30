@@ -31,6 +31,13 @@ class Config(Registrable):
         pipeline_config = config.get('pipeline_config_id')
         config_cls = Config.by_name(pipeline_config.lower())
         logger.critical(f'Load pipeline config class {config_cls.__name__}')
+
+        # check if base_dir and dataset_id in kwargs
+        if 'base_dir' in kwargs:
+            config[kwargs['experiment_id']]['base_config']['base_dir'] = kwargs['base_dir']
+        if 'dataset_id' in kwargs:
+            config[kwargs['experiment_id']]['base_config']['dataset_id'] = kwargs['dataset_id']
+
         return config_cls.parse_from_yaml_config(config, **kwargs)
 
     @staticmethod

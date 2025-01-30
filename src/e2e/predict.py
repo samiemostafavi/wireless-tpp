@@ -5,6 +5,7 @@ import yaml, pickle, json
 import numpy as np
 
 from wireless_tpp.config_factory import Config
+from wireless_tpp.runner import TPPRunnerE2E
 from wireless_tpp.utils import logger
 
 def generate_predictions(args):
@@ -18,12 +19,14 @@ def generate_predictions(args):
     gpu = prediction_config['gpu']
 
     if prediction_config['dataset']:
-        dataset_path = Path(prediction_config['dataset']) / "scheduling" / "datasets" / prediction_config['dataset_name']
+        dataset_path = Path(prediction_config['dataset']) / "e2e" / "datasets" / prediction_config['dataset_name']
     else:
-        dataset_path = Path(args.source) / "scheduling" / "datasets" / args.name
+        if prediction_config['dataset_name']:
+            dataset_path = Path(args.source) / "e2e" / "datasets" / prediction_config['dataset_name']
+        else:
+            logger.error("No dataset name specified")
 
     prediction_config['method'] = args.predict
-
     dataset_id = str(dataset_path).replace("/", "_")
     train_dir = dataset_path / 'train.pkl'
     valid_dir = dataset_path / 'dev.pkl'
@@ -37,7 +40,7 @@ def generate_predictions(args):
 
     logger.info(f"Loaded dataset {dataset_id}: {dataset_path}")
 
-    model_path = Path(args.source) / "scheduling" / "trained_models" / args.name / args.id
+    model_path = Path(args.source) / "e2e" / "trained_models" / args.name / args.id
     yaml_file = next(model_path.glob("*.yaml"))
     with open(yaml_file, 'r') as file:
         training_output_config = yaml.load(file, Loader=yaml.FullLoader)
@@ -47,6 +50,7 @@ def generate_predictions(args):
     prediction_base_dir = training_base_dir.replace("trained_models", "prediction_results")
 
     experiment_id = f"{training_output_config['base_config']['model_id']}_gen"
+
     # Transform the dict to match training configuration format
     config = {
         "pipeline_config_id": "runner_config",
@@ -66,7 +70,7 @@ def generate_predictions(args):
         },
         experiment_id: {
             "base_config": {
-                "stage": "gen",
+                "stage": "eval", # IMPORTANT
                 "backend": training_output_config['base_config']['backend'],
                 "dataset_id": dataset_id,
                 "runner_id": training_output_config['base_config']['runner_id'],
@@ -87,7 +91,6 @@ def generate_predictions(args):
             },
             "model_config": {
                 "model_specs" : training_output_config['model_config']['model_specs'],
-                "dropout_rate" : training_output_config['model_config']['dropout_rate'],
                 "hidden_size": training_output_config['model_config']['hidden_size'],
                 "num_layers": training_output_config['model_config']['num_layers'],
                 "loss_integral_num_sample_per_step": training_output_config['model_config']['loss_integral_num_sample_per_step'],
@@ -100,7 +103,7 @@ def generate_predictions(args):
         }
     }
     config = Config.build_from_dict(config, experiment_id=experiment_id)
-    model_runner = TPPRunnerScheduling(config)
+    model_runner = TPPRunnerE2E(config)
     if args.predict == 'probabilistic':
         model_runner.run(probability_generation=True)
     else:

@@ -3,6 +3,8 @@ from .predict import generate_predictions
 from .evaluate import evaluate_model
 from .train import train_model
 
+from wireless_tpp.utils import logger
+
 def run_e2e(inp_args):
     if inp_args.function == "plot_data":
         plot_data(inp_args)
