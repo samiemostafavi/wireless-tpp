@@ -1,9 +1,9 @@
 {
     "intervals_e2e_eval" : {
         "dataset" : "",
-        "dataset_name" : "sub_eval_oa4_200_event",
-        "batch_size" : 128,
-        "gpu" : -1,
+        "dataset_name" : "",
+        "batch_size" : 1024,
+        "gpu" : 0,
         "probability_generation": {
             "num_steps_dtime": 1000,
             "sample_dtime_max" : 15,

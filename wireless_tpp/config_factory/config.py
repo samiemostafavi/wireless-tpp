@@ -34,9 +34,9 @@ class Config(Registrable):
 
         # check if base_dir and dataset_id in kwargs
         if 'base_dir' in kwargs:
-            config[kwargs['experiment_id']]['base_config']['base_dir'] = kwargs['base_dir']
+            config[kwargs['experiment_id']]['base_config']['base_dir'] = str(kwargs['base_dir'])
         if 'dataset_id' in kwargs:
-            config[kwargs['experiment_id']]['base_config']['dataset_id'] = kwargs['dataset_id']
+            config[kwargs['experiment_id']]['base_config']['dataset_id'] = str(kwargs['dataset_id'])
 
         return config_cls.parse_from_yaml_config(config, **kwargs)
 

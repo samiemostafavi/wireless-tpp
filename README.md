@@ -59,7 +59,7 @@ To install the latest version from GitHub:
 git clone https://github.com/samiemostafavi/wireless-tpp.git
 cd wireless-tpp
 git checkout develop
-python setup.py install
+pip install -Ur requirements.txt
 ```
 
 

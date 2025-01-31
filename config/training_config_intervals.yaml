@@ -69,7 +69,8 @@ mlp:
         noise_type: 'gaussian'
         std_dev: 0.1
     model_specs:
-      tgt_seq_len: 20
+      tgt_seq_len: 20 # matters only for prediction
+      src_seq_len: 20 # matters only for prediction
       concat_features: False
       types_and_paddings: 
         slot: [21, 20] # slot indices: 0 to 19 (20 types), and padding token
@@ -151,7 +152,7 @@ lstm_100:
         include_mretx: False
         include_rfailed: False
 
-transformer_100:
+transformer_50_noretx:
   base_config:
     stage: train
     backend: torch
@@ -166,7 +167,7 @@ transformer_100:
     lr_scheduler_mode: 'min'
     lr_scheduler_patience: 6
     lr_scheduler_factor: 0.5
-    learning_rate: 1.e-3 # was 1.e-3, but 5.e-4 is better  
+    learning_rate: 5.e-3 # was 1.e-3, but 5.e-4 is better  
     valid_freq: 5
     use_tfb: False
     metrics: [ 'acc', 'rmse' ]
@@ -204,8 +205,8 @@ transformer_100:
         use_residual: True # super important, otherwise model does not learn
       mdn:
         num_mix_components: 8
-      tgt_seq_len: 100
-      src_seq_len: 100
+      tgt_seq_len: 50
+      src_seq_len: 50
       embeddings:
         include_dtime: True # Must be True always
         include_interarrival_time: True
@@ -213,8 +214,8 @@ transformer_100:
         include_len: False
         include_slot: True
         include_mcs: True
-        include_mretx: True
-        include_rfailed: True
+        include_mretx: False
+        include_rfailed: False
       target:
         include_slot: False # if True, helps LSTM a lot, degrades transformer
         include_mcs: False

@@ -48,6 +48,7 @@ class MLPE2E(TorchBaseModel):
 
         # only matters during prediction
         self.tgt_seq_len = model_config.model_specs['tgt_seq_len']
+        self.src_seq_len = model_config.model_specs['src_seq_len']
 
         self.delay_embedding = DelayEmbedding(
             d_model=self.d_model,
@@ -71,14 +72,14 @@ class MLPE2E(TorchBaseModel):
         """
 
         embeddings = self.delay_embedding(
-            seq_obj.dtime_seqs[:,-1:], 
-            seq_obj.time_seqs[:,-1:], 
-            seq_obj.interarrival_time_seqs[:,-1:], 
-            seq_obj.slot_seqs[:,-1:], 
-            seq_obj.mcs_seqs[:,-1:], 
-            seq_obj.mretx_seqs[:,-1:], 
-            seq_obj.rfailed_seqs[:,-1:], 
-            seq_obj.len_seqs[:,-1:]
+            seq_obj.src_dtime_seqs[:,-1:], 
+            seq_obj.src_time_seqs[:,-1:], 
+            seq_obj.src_interarrival_time_seqs[:,-1:], 
+            seq_obj.src_slot_seqs[:,-1:], 
+            seq_obj.src_mcs_seqs[:,-1:], 
+            seq_obj.src_mretx_seqs[:,-1:], 
+            seq_obj.src_rfailed_seqs[:,-1:], 
+            seq_obj.src_len_seqs[:,-1:]
         )
         # embedding dims: [batch_size, 1, d_model]
 
@@ -98,18 +99,40 @@ class MLPE2E(TorchBaseModel):
         return mdn_params, num_predictions
 
     def loglike_loss(self, batch, forward=True):
-
-        seq_obj = SequenceSeperate(batch, self.device, None, None, self.delay_embedding.dtime_transform, self.delay_embedding.len_transform, self.delay_embedding.interarrival_time_transform)
+        
+        seq_obj = SequenceSeperate(batch, self.device, self.src_seq_len, self.tgt_seq_len, self.delay_embedding.dtime_transform, self.delay_embedding.len_transform, self.delay_embedding.interarrival_time_transform)
 
         mdn_params, num_predictions = self.forward(seq_obj, forward=forward)
-        # mdn_params: [batch_size, tgt_seq_len, self.mdn.num_params]
+        # mdn_params: [batch_size, 1, self.mdn.num_params]
 
-        labels = seq_obj.dtime_seqs_transformed[:,-1:]
-        # labels: [batch_size, tgt_seq_len]
+        if forward:
+            # we only consider the first element of the tgt sequence for ll loss
 
-        nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.non_pad_mask[:, -1:])
-        num_predictions_nll = nll_mask.sum(axis=0)
-        assert np.array_equal(num_predictions.cpu().numpy(), num_predictions_nll.cpu().numpy())
+            labels = seq_obj.tgt_dtime_seqs_transformed[:, :1]
+            # labels: [batch_size, 1]
+
+            nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask[:, :1])
+            num_predictions_nll = nll_mask.sum(axis=0)
+            assert np.array_equal(num_predictions.cpu().numpy(), num_predictions_nll.cpu().numpy())
+
+        else:
+            # here we calculate the negative log likelihood loss for all the labels in the tgt sequence length
+            # the mdn_params we repeat the same for all the tgt sequence length
+
+            # repeat the mdn_params for the tgt sequence length
+            # input: [batch_size, 1, self.mdn.num_params]
+            mdn_params = mdn_params.repeat(1, self.tgt_seq_len, 1)
+            # output: [batch_size, tgt_seq_len, self.mdn.num_params]
+
+            # fix the number of predictions
+            num_predictions = num_predictions*self.tgt_seq_len
+
+            labels = seq_obj.tgt_dtime_seqs_transformed
+            # labels: [batch_size, tgt_seq_len]
+
+            nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask)
+            num_predictions_nll = nll_mask.sum(axis=0)
+            assert np.array_equal(num_predictions.cpu().numpy(), num_predictions_nll.cpu().numpy())
 
         return nll, nll_mask
 

@@ -18,13 +18,27 @@ def evaluate_model(args):
     batch_size = prediction_config['batch_size']
     gpu = prediction_config['gpu']
 
+    if args.id:
+        model_path = Path(args.source) / "e2e" / "trained_models" / args.name / args.id
+    else:
+        # if no id is passed, take the first folder in the trained_models directory
+        tranied_models_path = Path(args.source) / "e2e" / "trained_models" / args.name
+        model_path = next(tranied_models_path.iterdir())
+
+    yaml_file = next(model_path.glob("*.yaml"))
+    with open(yaml_file, 'r') as file:
+        training_output_config = yaml.load(file, Loader=yaml.FullLoader)
+
+    logger.info(f"Loaded model {model_path}")
+
     if prediction_config['dataset']:
         dataset_path = Path(prediction_config['dataset']) / "e2e" / "datasets" / prediction_config['dataset_name']
     else:
         if prediction_config['dataset_name']:
             dataset_path = Path(args.source) / "e2e" / "datasets" / prediction_config['dataset_name']
         else:
-            logger.error("No dataset name specified")
+            # take the default test dataset of the training dataset
+            dataset_path = Path(training_output_config['data_config']['train_dir']).parent
 
     dataset_id = str(dataset_path).replace("/", "_")
     train_dir = dataset_path / 'train.pkl'
@@ -38,11 +52,6 @@ def evaluate_model(args):
         dataset_config = json.load(f)
 
     logger.info(f"Loaded dataset {dataset_id}: {dataset_path}")
-
-    model_path = Path(args.source) / "e2e" / "trained_models" / args.name / args.id
-    yaml_file = next(model_path.glob("*.yaml"))
-    with open(yaml_file, 'r') as file:
-        training_output_config = yaml.load(file, Loader=yaml.FullLoader)
 
     # fix the base_dir for the evaluation stage
     training_base_dir = training_output_config['base_config']['base_dir']

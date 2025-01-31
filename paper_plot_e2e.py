@@ -24,7 +24,7 @@ plt.rcParams.update({
 })
 
 # Path to the `data` directory
-base_path = Path("./data/intervals_results/e2e/prediction_results")
+base_path = Path("./data/intervals_final_results/e2e/prediction_results")
 
 # Categories and history lengths to plot
 categories = {
