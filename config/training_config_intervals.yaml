@@ -69,8 +69,8 @@ mlp:
         noise_type: 'gaussian'
         std_dev: 0.1
     model_specs:
-      tgt_seq_len: 20 # matters only for prediction
-      src_seq_len: 20 # matters only for prediction
+      tgt_seq_len: 5 # matters only for prediction
+      src_seq_len: 5 # matters only for prediction
       concat_features: False
       types_and_paddings: 
         slot: [21, 20] # slot indices: 0 to 19 (20 types), and padding token
@@ -82,14 +82,13 @@ mlp:
         num_mix_components: 8
       embeddings:
         include_dtime: False # Must be False always
-        include_interarrival_time: True
-        include_time: False
+        include_interarrival_time: True 
+        include_time: False # Must be False always
         include_len: False
         include_slot: True
         include_mcs: True
         include_mretx: False # must be false
         include_rfailed: False # must be false
-
 
 lstm_100:
   base_config:

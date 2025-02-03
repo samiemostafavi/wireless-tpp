@@ -6,6 +6,7 @@ from torch import nn
 from wireless_tpp.model.baselayer import EncoderLayer, DecoderLayer, MultiHeadAttention, TimePositionalEncoding, ScaledSoftplus, PositionalEncoding, FeedForwardBlock
 from wireless_tpp.model.basemodel import TorchBaseModel
 from wireless_tpp.utils import logger
+from wireless_tpp.utils import RunnerPhase
 
 from wireless_tpp.model.mdn import clamp_preserve_gradients, NormalMixtureDistribution2D, NormalMixtureDistribution, AddGaussianNoise
 
@@ -154,7 +155,12 @@ class RecurrentE2E(TorchBaseModel):
 
         return shifted_embeds
 
-    def forward(self, seq_obj : SequenceSeperate, forward=True):
+    def forward(self, seq_obj : SequenceSeperate, phase=None):
+
+        if phase == RunnerPhase.TRAIN:
+            forward = True
+        else:
+            forward = False
 
         # teacher forcing does not work for the last layer mlp
         if self.teacher_forcing:
@@ -241,11 +247,11 @@ class RecurrentE2E(TorchBaseModel):
         input_step = embeddings_step
         return input_step
 
-    def loglike_loss(self, batch, forward=True):
+    def loglike_loss(self, batch, phase):
 
         seq_obj = SequenceSeperate(batch, self.device, self.src_seq_len, self.tgt_seq_len, self.delay_embedding.dtime_transform, self.delay_embedding.len_transform, self.delay_embedding.interarrival_time_transform)
 
-        mdn_params, num_predictions = self.forward(seq_obj, forward=forward)
+        mdn_params, num_predictions = self.forward(seq_obj, phase)
         # mdn_params: [batch_size, tgt_seq_len, self.mdn.num_params]
 
         labels = seq_obj.tgt_dtime_seqs_transformed

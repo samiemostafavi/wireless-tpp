@@ -30,6 +30,7 @@ examples/checkpoints/*
 # ignore _results folders
 *_results/
 results/
+figures/
 data/
 *.lseq
 *.parquet
