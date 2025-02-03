@@ -28,9 +28,9 @@ base_path = Path("./data/intervals_final_results/e2e/prediction_results")
 
 # Categories and history lengths to plot
 categories = {
-    'Type' : ['MLP', 'LSTM', 'Transformer'],
-    'Forecasting Model' : ['Direct', 'Autoregressive'],
-    'History Length': ['5', '20']
+    'Type' : ['mlp', 'lstm', 'transformer', 'lstmmlp', 'transformermlp'],
+    'History Length': ['5', '20', '50', '100'],
+    'Training Size': ['1k', '2p5k', '']
 }
 
 path_with_types = {

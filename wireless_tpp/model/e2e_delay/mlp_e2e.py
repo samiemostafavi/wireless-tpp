@@ -3,6 +3,7 @@ import torch
 import torch.distributions as D
 from torch import nn
 
+from wireless_tpp.utils import RunnerPhase
 from wireless_tpp.model.baselayer import FeedForwardBlock
 from wireless_tpp.model.basemodel import TorchBaseModel
 from wireless_tpp.utils import logger
@@ -70,22 +71,21 @@ class MLPE2E(TorchBaseModel):
     def embed(self, seq_obj : SequenceSeperate):
         """ Embedding layer.
         """
-
         embeddings = self.delay_embedding(
-            seq_obj.src_dtime_seqs[:,-1:], 
-            seq_obj.src_time_seqs[:,-1:], 
-            seq_obj.src_interarrival_time_seqs[:,-1:], 
-            seq_obj.src_slot_seqs[:,-1:], 
-            seq_obj.src_mcs_seqs[:,-1:], 
-            seq_obj.src_mretx_seqs[:,-1:], 
-            seq_obj.src_rfailed_seqs[:,-1:], 
-            seq_obj.src_len_seqs[:,-1:]
+            seq_obj.src_dtime_seqs[:,-1:], # last history packet's delay 
+            seq_obj.tgt_time_seqs[:,:1], # first target packet
+            seq_obj.tgt_interarrival_time_seqs[:,:1], # first target packet
+            seq_obj.tgt_slot_seqs[:,:1], # first target packet
+            seq_obj.tgt_mcs_seqs[:,:1], # first target packet
+            seq_obj.tgt_mretx_seqs[:,:1], # first target packet
+            seq_obj.tgt_rfailed_seqs[:,:1], # first target packet
+            seq_obj.tgt_len_seqs[:,:1] # first target packet 
         )
         # embedding dims: [batch_size, 1, d_model]
 
         return embeddings
 
-    def forward(self, seq_obj : SequenceSeperate, forward=True):
+    def forward(self, seq_obj : SequenceSeperate):
 
         # apply embedding on the delay sequence
         embeds = self.embed(seq_obj)
@@ -94,18 +94,18 @@ class MLPE2E(TorchBaseModel):
         mdn_params = self.mdn_head(embeds)
         # mdn_params dim: [batch_size, self.mdn.num_params]
 
-        num_predictions = seq_obj.non_pad_mask[:,-1:].sum(axis=0)
+        num_predictions = seq_obj.tgt_non_pad_mask[:,:1].sum(axis=0)
 
         return mdn_params, num_predictions
 
-    def loglike_loss(self, batch, forward=True):
+    def loglike_loss(self, batch, phase):
         
         seq_obj = SequenceSeperate(batch, self.device, self.src_seq_len, self.tgt_seq_len, self.delay_embedding.dtime_transform, self.delay_embedding.len_transform, self.delay_embedding.interarrival_time_transform)
 
-        mdn_params, num_predictions = self.forward(seq_obj, forward=forward)
+        mdn_params, num_predictions = self.forward(seq_obj)
         # mdn_params: [batch_size, 1, self.mdn.num_params]
 
-        if forward:
+        if phase == RunnerPhase.TRAIN or phase == RunnerPhase.VALIDATE:
             # we only consider the first element of the tgt sequence for ll loss
 
             labels = seq_obj.tgt_dtime_seqs_transformed[:, :1]
@@ -115,17 +115,15 @@ class MLPE2E(TorchBaseModel):
             num_predictions_nll = nll_mask.sum(axis=0)
             assert np.array_equal(num_predictions.cpu().numpy(), num_predictions_nll.cpu().numpy())
 
-        else:
+        else: # phase == RunnerPhase.EVALUATE or phase == RunnerPhase.PREDICT
             # here we calculate the negative log likelihood loss for all the labels in the tgt sequence length
             # the mdn_params we repeat the same for all the tgt sequence length
 
             # repeat the mdn_params for the tgt sequence length
             # input: [batch_size, 1, self.mdn.num_params]
             mdn_params = mdn_params.repeat(1, self.tgt_seq_len, 1)
+            num_predictions = num_predictions.repeat(self.tgt_seq_len)
             # output: [batch_size, tgt_seq_len, self.mdn.num_params]
-
-            # fix the number of predictions
-            num_predictions = num_predictions*self.tgt_seq_len
 
             labels = seq_obj.tgt_dtime_seqs_transformed
             # labels: [batch_size, tgt_seq_len]
@@ -138,14 +136,19 @@ class MLPE2E(TorchBaseModel):
 
     def predict(self, batch):
 
-        seq_obj = SequenceSeperate(batch, self.device, None, None, self.delay_embedding.dtime_transform, self.delay_embedding.len_transform, self.delay_embedding.interarrival_time_transform)
+        seq_obj = SequenceSeperate(batch, self.device, self.src_seq_len, self.tgt_seq_len, self.delay_embedding.dtime_transform, self.delay_embedding.len_transform, self.delay_embedding.interarrival_time_transform)
 
-        interarrival_time_src_seqs = seq_obj.interarrival_time_seqs_transformed[:, -1:]
-        len_src_seqs = seq_obj.len_seqs_transformed[:, -1:]
-        label = seq_obj.dtime_seqs_transformed[:, -1:]
-
+        interarrival_time_src_seqs = seq_obj.tgt_interarrival_time_seqs_transformed
+        len_src_seqs = seq_obj.tgt_len_seqs_transformed
+        labels = seq_obj.tgt_dtime_seqs_transformed
 
         mdn_params, num_predictions = self.forward(seq_obj)
+        # mdn_params: [batch_size, 1, self.mdn.num_params]
+
+        # repeat the mdn_params for the tgt sequence length
+        # input: [batch_size, 1, self.mdn.num_params]
+        mdn_params = mdn_params.repeat(1, self.tgt_seq_len, 1)
+        # output: [batch_size, tgt_seq_len, self.mdn.num_params]
         pred_mean, pred_var = self.mdn.mean_variance(mdn_params)
 
         pred_q99a = self.mdn.quantile(mdn_params,q=0.005)
@@ -160,11 +163,11 @@ class MLPE2E(TorchBaseModel):
         pred_q5a = self.mdn.quantile(mdn_params,q=0.25)
         pred_q5b = self.mdn.quantile(mdn_params,q=0.75)
 
-        pred_mask = seq_obj.non_pad_mask[:, -1:]
+        pred_mask = seq_obj.tgt_non_pad_mask
 
-        assert label.shape == pred_mean.shape
-        assert label.shape == pred_var.shape
+        assert labels.shape == pred_mean.shape
+        assert labels.shape == pred_var.shape
 
-        return (pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b), label, (interarrival_time_src_seqs, len_src_seqs), pred_mask
+        return (pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b), labels, (interarrival_time_src_seqs, len_src_seqs), pred_mask
 
 
