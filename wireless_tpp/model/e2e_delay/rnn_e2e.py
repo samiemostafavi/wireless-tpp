@@ -72,6 +72,7 @@ class RecurrentE2E(TorchBaseModel):
         # MixtureDistribution
         self.mdn = MixtureDistribution(model_config, self.device)
 
+        self.include_prev_dtime_in_tgt = model_config.model_specs['target']['include_prev_dtime']
         self.include_slot_in_tgt = model_config.model_specs['target']['include_slot']
         self.include_mcs_in_tgt = model_config.model_specs['target']['include_mcs']
         self.include_mretx_in_tgt = model_config.model_specs['target']['include_mretx']
@@ -135,25 +136,70 @@ class RecurrentE2E(TorchBaseModel):
         """Call the model
 
         Args:
-            time_seqs (tensor): [batch_size, seq_len], timestamp seqs.
-            type_seqs (tensor): [batch_size, seq_len], event type seqs.
-            attention_mask (tensor): [batch_size, seq_len, seq_len], attention masks.
+            seq_obj
         Returns:
             tensor: hidden states at event times.
         """
 
+        # first, prepare the prev_dtime_seqs, which is shifted to the right by 1 and padding on the first position
+        # we pad the target part of the sequence as well
+        dtime_seqs = seq_obj.dtime_seqs[:, -self.src_seq_len-self.tgt_seq_len:]
+        prev_dtime_seqs = torch.zeros_like(dtime_seqs)
+        prev_dtime_seqs[:, 1:] = dtime_seqs[:, :-1]
+        prev_dtime_seqs[:, 0] = self.PAD_TOKEN
+        prev_dtime_seqs[:, self.src_seq_len:] = self.PAD_TOKEN
+
+        # fix interarrival_time_seqs and time_seqs
+        interarrival_time_seqs = seq_obj.interarrival_time_seqs[:, -self.src_seq_len-self.tgt_seq_len:]
+        time_seqs = seq_obj.time_seqs[:, -self.src_seq_len-self.tgt_seq_len:] # it is never used
+        len_seqs = seq_obj.len_seqs[:, -self.src_seq_len-self.tgt_seq_len:]
+
+        # now that we have all sequences ready, we should replace the tgt part of some of the sequences with the paddings
+        slot_seqs = torch.cat(
+            [
+                seq_obj.src_slot_seqs, 
+                seq_obj.tgt_slot_seqs if self.include_slot_in_tgt else self.slots_pad_id * torch.ones_like(seq_obj.tgt_dtime_seqs, device=self.device, dtype=torch.long)
+            ],
+            dim=1
+        )
+
+        mcs_seqs = torch.cat(
+            [
+                seq_obj.src_mcs_seqs, 
+                seq_obj.tgt_mcs_seqs if self.include_mcs_in_tgt else self.mcs_pad_id * torch.ones_like(seq_obj.tgt_dtime_seqs, device=self.device, dtype=torch.long)
+            ],
+            dim=1
+        )
+        mretx_seqs = torch.cat(
+            [
+                seq_obj.src_mretx_seqs, 
+                seq_obj.tgt_mretx_seqs if self.include_mretx_in_tgt else self.mretx_pad_id * torch.ones_like(seq_obj.tgt_dtime_seqs, device=self.device, dtype=torch.long)
+            ],
+            dim=1
+        )
+        rfailed_seqs = torch.cat(
+            [
+                seq_obj.src_rfailed_seqs, 
+                seq_obj.tgt_rfailed_seqs if self.include_rfailed_in_tgt else self.rfailed_pad_id * torch.ones_like(seq_obj.tgt_dtime_seqs, device=self.device, dtype=torch.long)
+            ],
+            dim=1
+        )
+
+        # apply embedding on the whole sequences (seq_len = src + tgt)
         embeddings = self.delay_embedding(
-            seq_obj.dtime_seqs, seq_obj.time_seqs, seq_obj.interarrival_time_seqs, 
-            seq_obj.slot_seqs, seq_obj.mcs_seqs, seq_obj.mretx_seqs, seq_obj.rfailed_seqs, seq_obj.len_seqs
+            prev_dtime_seqs,  # prev_dtime
+            time_seqs, 
+            interarrival_time_seqs, 
+            slot_seqs, 
+            mcs_seqs, 
+            mretx_seqs, 
+            rfailed_seqs, 
+            len_seqs
         )
         # embedding dims: [batch_size, seq_len, d_model]
 
-        # Shift the input embeddings to the right
-        shifted_embeds = torch.zeros_like(embeddings)  # Initialize a zero tensor with the same shape as embedding
-        shifted_embeds[:, 1:, :] = embeddings[:, :-1, :]  # Shift embeddings to the right
-        # sh_src_embedding dims: [batch_size, seq_len, d_model]
-
-        return shifted_embeds
+        # return the embeddings
+        return embeddings
 
     def forward(self, seq_obj : SequenceSeperate, phase=None):
 
@@ -170,33 +216,49 @@ class RecurrentE2E(TorchBaseModel):
         if not forward:
             is_teacher_forcing_now = False
 
-        # apply embedding on the delay sequence
-        shifted_embeds = self.embed(seq_obj)
-        # shifted_embeds dim: [batch_size, seq_len, d_model]
-
         if is_teacher_forcing_now:
-            # shifted_embedding: [batch_size, seq_len, d_model]
-            rnn_out, _ = self.layer_rnn(shifted_embeds)
+
+            # apply embedding on the delay sequence
+            embeddings = self.embed(seq_obj)
+            # embeddings dim: [batch_size, seq_len = src_len + tgt_len, d_model]
+
+            # embeddings: [batch_size, seq_len, d_model]
+            rnn_out, _ = self.layer_rnn(embeddings)
 
             # filter out the src part
             # tgt_rnn_out: [batch_size, tgt_seq_len, d_model]
             tgt_rnn_out = rnn_out[:, self.src_seq_len:, :]
             mdn_params = self.mdn_head(tgt_rnn_out)
             # raw_params: [batch_size, tgt_seq_len, self.mdn.num_params]
-        else:
+
+
+        # apply embedding on the delay sequence
+        embeddings = self.embed(seq_obj)
+        # embeddings dim: [batch_size, seq_len = src_len + tgt_len, d_model]
+
+        if self.last_layer_mlp:                
             # extract the src embedding
-            sh_src_embedding = shifted_embeds[:, -self.src_seq_len-self.tgt_seq_len:-self.tgt_seq_len, :]
+            embeddings_src = embeddings[:, -self.src_seq_len-self.tgt_seq_len:-self.tgt_seq_len, :]
+
             # feed in the src data
-            rnn_out, prev_hidden = self.layer_rnn(sh_src_embedding)
+            rnn_out, prev_hidden = self.layer_rnn(embeddings_src)
             # [batch_size, his_len, d_model]
     
-            if self.last_layer_mlp:
-                # feed the last cell's output to MLP
-                mdn_params = self.mdn_head(rnn_out[:, -1:, :])
-                # output is [batch_size, 1, self.tgt_seq_len*self.mdn.num_params]
-                # convert it to [batch_size, self.tgt_seq_len, self.mdn.num_params]
-                mdn_params = mdn_params.view(-1, self.tgt_seq_len, self.mdn.num_params)
-            else:
+            # feed the last cell's output to MLP
+            mdn_params = self.mdn_head(rnn_out[:, -1:, :])
+
+            # output is [batch_size, 1, self.tgt_seq_len*self.mdn.num_params]
+            # convert it to [batch_size, self.tgt_seq_len, self.mdn.num_params]
+            mdn_params = mdn_params.view(-1, self.tgt_seq_len, self.mdn.num_params)
+        else:
+            if self.include_prev_dtime_in_tgt:
+                # extract the src embedding
+                embeddings_src = embeddings[:, -self.src_seq_len-self.tgt_seq_len:-self.tgt_seq_len, :]
+
+                # feed in the src data
+                rnn_out, prev_hidden = self.layer_rnn(embeddings_src)
+                # [batch_size, his_len, d_model]
+
                 # encode it to get the input for the next step
                 input_step = self.get_rnn_tgt_input_step(rnn_out[:, -1:, :], seq_obj, 0)
                 # input_step: [batch_size, 1, d_model]
@@ -209,6 +271,17 @@ class RecurrentE2E(TorchBaseModel):
                     input_step = self.get_rnn_tgt_input_step(rnn_out_step, seq_obj, i+1)
                 all_preds = torch.stack(all_preds, dim=1)
                 mdn_params = self.mdn_head(all_preds)
+            else:
+
+                # feed in the src data
+                rnn_out, prev_hidden = self.layer_rnn(embeddings)
+                # [batch_size, seq_len, d_model]
+
+                # filter out the src part
+                # tgt_rnn_out: [batch_size, tgt_len, d_model]
+                tgt_rnn_out = rnn_out[:, self.src_seq_len:, :]
+                mdn_params = self.mdn_head(tgt_rnn_out)
+                # raw_params: [batch_size, tgt_seq_len, self.mdn.num_params]
 
         num_predictions = seq_obj.tgt_non_pad_mask.float().sum(axis=0)
         return mdn_params, num_predictions

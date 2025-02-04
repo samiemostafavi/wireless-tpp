@@ -72,7 +72,7 @@ class MLPE2E(TorchBaseModel):
         """ Embedding layer.
         """
         embeddings = self.delay_embedding(
-            seq_obj.src_dtime_seqs[:,-1:], # last history packet's delay 
+            seq_obj.src_dtime_seqs[:,-1:], # last history packet's delay (prev_dtime)
             seq_obj.tgt_time_seqs[:,:1], # first target packet
             seq_obj.tgt_interarrival_time_seqs[:,:1], # first target packet
             seq_obj.tgt_slot_seqs[:,:1], # first target packet

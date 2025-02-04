@@ -81,7 +81,7 @@ mlp:
       mdn:
         num_mix_components: 8
       embeddings:
-        include_dtime: False # Must be False always
+        include_prev_dtime: False
         include_interarrival_time: True 
         include_time: False # Must be False always
         include_len: False
@@ -90,7 +90,7 @@ mlp:
         include_mretx: False # must be false
         include_rfailed: False # must be false
 
-lstm_100:
+lstm_5_NEW:
   base_config:
     stage: train
     backend: torch
@@ -134,18 +134,19 @@ lstm_100:
       bidirectional: False
       mdn:
         num_mix_components: 8
-      tgt_seq_len: 100
-      src_seq_len: 100
+      tgt_seq_len: 5
+      src_seq_len: 5
       embeddings:
-        include_dtime: True # Must be True always
+        include_prev_dtime: False
         include_interarrival_time: True
-        include_time: False
+        include_time: False # False always
         include_len: False
         include_slot: True
         include_mcs: True
         include_mretx: True
         include_rfailed: True
       target:
+        include_prev_dtime: False # important as it switches the prediction from parallel to autoregressive
         include_slot: False # if True, helps LSTM a lot, degrades transformer
         include_mcs: False
         include_mretx: False
@@ -207,7 +208,7 @@ transformer_50_noretx:
       tgt_seq_len: 50
       src_seq_len: 50
       embeddings:
-        include_dtime: True # Must be True always
+        include_prev_dtime: False # Must be False always
         include_interarrival_time: True
         include_time: False
         include_len: False
@@ -216,7 +217,7 @@ transformer_50_noretx:
         include_mretx: False
         include_rfailed: False
       target:
-        include_slot: False # if True, helps LSTM a lot, degrades transformer
+        include_slot: False
         include_mcs: False
         include_mretx: False
         include_rfailed: False

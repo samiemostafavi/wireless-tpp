@@ -151,7 +151,7 @@ class DelayEmbedding(nn.Module):
         self.interarrival_time_transform = D.AffineTransform(loc=self.mean_interarrival_time, scale=self.std_interarrival_time)
 
         # dtime embedding MUST EXIST for rnn and transformer
-        self.include_dtime_embedding = model_config.model_specs['embeddings']['include_dtime']
+        self.include_prev_dtime_embedding = model_config.model_specs['embeddings']['include_prev_dtime']
         self.dtime_emb_dim = self.d_model
 
         self.concat_features = model_config.model_specs['concat_features']
@@ -196,8 +196,8 @@ class DelayEmbedding(nn.Module):
         features_dims = []
         # Embedding layers defenitions
         # delay embedding layer
-        if self.include_dtime_embedding:
-            self.dtime_emb_layer = nn.Linear(
+        if self.include_prev_dtime_embedding:
+            self.prev_dtime_emb_layer = nn.Linear(
                 1, 
                 self.dtime_emb_dim,
                 device=self.device
@@ -275,7 +275,7 @@ class DelayEmbedding(nn.Module):
                 self.device
             )
 
-    def forward(self, dtime, time, interarrival_time, slot, mcs, mretx, rfailed, len):
+    def forward(self, prev_dtime, time, interarrival_time, slot, mcs, mretx, rfailed, len):
         """Get the embeddings for the input features. Does not apply positional encoding.
 
         Args:
@@ -291,7 +291,7 @@ class DelayEmbedding(nn.Module):
         Returns:
             tensor: [batch_size, seq_len, d_model], embeddings.
         """
-        batch_size, seq_len = dtime.size()
+        batch_size, seq_len = prev_dtime.size()
         # assert batch_size and seq_len are correct and equal among all
         assert time.size() == (batch_size, seq_len)
         assert interarrival_time.size() == (batch_size, seq_len)
@@ -313,10 +313,10 @@ class DelayEmbedding(nn.Module):
         embeddings_sum = torch.zeros((batch_size,seq_len,self.d_model), device=self.device)
         features_emb = []
 
-        if self.include_dtime_embedding:
-            dtime_enc = self.dtime_emb_layer(dtime.float().unsqueeze(-1))
-            embeddings_sum += dtime_enc
-            features_emb.append(dtime_enc)
+        if self.include_prev_dtime_embedding:
+            prev_dtime_enc = self.prev_dtime_emb_layer(prev_dtime.float().unsqueeze(-1))
+            embeddings_sum += prev_dtime_enc
+            features_emb.append(prev_dtime_enc)
 
         if self.include_time_embedding:
             time_enc = self.layer_time_embedding(time)
