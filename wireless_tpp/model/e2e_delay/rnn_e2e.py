@@ -303,11 +303,10 @@ class RecurrentE2E(TorchBaseModel):
 
         slot, len, len_transformed, mcs, mretx, rfailed, num_rbs, time, dtime, \
             dtime_transformed, etype, interarrival_time, interarrival_time_transformed, \
-            non_pad_mask, attention_mask = seq_obj.get_element_at_idx(self.src_seq_len + idx -1) # outputs all have [batch_size, 1]
-        # self.src_seq_len + idx -1 because idx starts from 0 and -1 due to the shift in the target sequence
+            non_pad_mask, attention_mask = seq_obj.get_element_at_idx(self.src_seq_len + idx) # outputs all have [batch_size, 1]
 
         embeddings_step = self.delay_embedding(
-            pred_dtime_step, 
+            pred_dtime_step, # this will be prev_dtime
             time, 
             interarrival_time, 
             slot if self.include_slot_in_tgt else self.slots_pad_id * torch.ones_like(pred_dtime_step, device=self.device, dtype=torch.long),

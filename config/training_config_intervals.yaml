@@ -137,7 +137,7 @@ lstm_5_NEW:
       tgt_seq_len: 5
       src_seq_len: 5
       embeddings:
-        include_prev_dtime: False
+        include_prev_dtime: True
         include_interarrival_time: True
         include_time: False # False always
         include_len: False
@@ -146,13 +146,13 @@ lstm_5_NEW:
         include_mretx: True
         include_rfailed: True
       target:
-        include_prev_dtime: False # important as it switches the prediction from parallel to autoregressive
+        include_prev_dtime: True # important as it switches the prediction from parallel to autoregressive
         include_slot: False # if True, helps LSTM a lot, degrades transformer
         include_mcs: False
         include_mretx: False
         include_rfailed: False
 
-transformer_50_noretx:
+transformer_5_NEW:
   base_config:
     stage: train
     backend: torch
@@ -205,8 +205,8 @@ transformer_50_noretx:
         use_residual: True # super important, otherwise model does not learn
       mdn:
         num_mix_components: 8
-      tgt_seq_len: 50
-      src_seq_len: 50
+      tgt_seq_len: 5
+      src_seq_len: 5
       embeddings:
         include_prev_dtime: False # Must be False always
         include_interarrival_time: True
@@ -214,8 +214,8 @@ transformer_50_noretx:
         include_len: False
         include_slot: True
         include_mcs: True
-        include_mretx: False
-        include_rfailed: False
+        include_mretx: True
+        include_rfailed: True
       target:
         include_slot: False
         include_mcs: False
