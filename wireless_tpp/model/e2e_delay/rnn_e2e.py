@@ -42,7 +42,6 @@ class RecurrentE2E(TorchBaseModel):
 
         self.tgt_seq_len = model_config.model_specs['tgt_seq_len']
         self.src_seq_len = model_config.model_specs['src_seq_len']
-        self.teacher_forcing = model_config.model_specs['teacher_forcing']
         self.last_layer_mlp = model_config.model_specs['last_layer_mlp']
         
         self.PAD_TOKEN = -1.0
@@ -203,35 +202,6 @@ class RecurrentE2E(TorchBaseModel):
 
     def forward(self, seq_obj : SequenceSeperate, phase=None):
 
-        if phase == RunnerPhase.TRAIN:
-            forward = True
-        else:
-            forward = False
-
-        # teacher forcing does not work for the last layer mlp
-        if self.teacher_forcing:
-            assert self.last_layer_mlp == False
-
-        is_teacher_forcing_now = self.teacher_forcing
-        if not forward:
-            is_teacher_forcing_now = False
-
-        if is_teacher_forcing_now:
-
-            # apply embedding on the delay sequence
-            embeddings = self.embed(seq_obj)
-            # embeddings dim: [batch_size, seq_len = src_len + tgt_len, d_model]
-
-            # embeddings: [batch_size, seq_len, d_model]
-            rnn_out, _ = self.layer_rnn(embeddings)
-
-            # filter out the src part
-            # tgt_rnn_out: [batch_size, tgt_seq_len, d_model]
-            tgt_rnn_out = rnn_out[:, self.src_seq_len:, :]
-            mdn_params = self.mdn_head(tgt_rnn_out)
-            # raw_params: [batch_size, tgt_seq_len, self.mdn.num_params]
-
-
         # apply embedding on the delay sequence
         embeddings = self.embed(seq_obj)
         # embeddings dim: [batch_size, seq_len = src_len + tgt_len, d_model]
@@ -252,6 +222,7 @@ class RecurrentE2E(TorchBaseModel):
             mdn_params = mdn_params.view(-1, self.tgt_seq_len, self.mdn.num_params)
         else:
             if self.include_prev_dtime_in_tgt:
+                # autoregressive prediction
                 # extract the src embedding
                 embeddings_src = embeddings[:, -self.src_seq_len-self.tgt_seq_len:-self.tgt_seq_len, :]
 
@@ -272,14 +243,14 @@ class RecurrentE2E(TorchBaseModel):
                 all_preds = torch.stack(all_preds, dim=1)
                 mdn_params = self.mdn_head(all_preds)
             else:
-
-                # feed in the src data
+                # parallel prediction
+                # use the entire embeddings for the prediction
                 rnn_out, prev_hidden = self.layer_rnn(embeddings)
                 # [batch_size, seq_len, d_model]
 
                 # filter out the src part
                 # tgt_rnn_out: [batch_size, tgt_len, d_model]
-                tgt_rnn_out = rnn_out[:, self.src_seq_len:, :]
+                tgt_rnn_out = rnn_out[:, self.src_seq_len-1:-1, :] # note that here we take one to the last tgt_len elements to be similar to the autoregressive case and last layer mlp cases
                 mdn_params = self.mdn_head(tgt_rnn_out)
                 # raw_params: [batch_size, tgt_seq_len, self.mdn.num_params]
 

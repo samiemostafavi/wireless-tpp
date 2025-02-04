@@ -42,11 +42,8 @@ class TransformerE2E(TorchBaseModel):
         logger.info(f"Encoder with {self.n_encoder_heads} heads, num_layers: {self.n_encoder_layers}, use residual: {self.encoder_use_residual}")
 
         # decoder
-        self.teacher_forcing = model_config.model_specs['teacher_forcing']
         self.last_layer_mlp = model_config.model_specs['last_layer_mlp']
         if not self.last_layer_mlp:
-            self.decoder_type = model_config.model_specs['decoder']['type']
-            assert self.decoder_type in ['parallel', 'autoregressive']
             self.n_decoder_self_heads = model_config.model_specs['decoder']['num_self_heads']
             self.n_decoder_cross_heads = model_config.model_specs['decoder']['num_cross_heads']
             self.n_decoder_layers = model_config.model_specs['decoder']['num_layers']
@@ -76,6 +73,7 @@ class TransformerE2E(TorchBaseModel):
             model_config = model_config
         )
 
+        self.include_prev_dtime_in_tgt = model_config.model_specs['target']['include_prev_dtime']
         self.include_slot_in_tgt = model_config.model_specs['target']['include_slot']
         self.include_mcs_in_tgt = model_config.model_specs['target']['include_mcs']
         self.include_mretx_in_tgt = model_config.model_specs['target']['include_mretx']
@@ -154,38 +152,94 @@ class TransformerE2E(TorchBaseModel):
             # prediction linear layer
             self.mdn_head = nn.Linear(self.d_model, self.mdn.num_params, device = self.device)
 
-    def encode(self, seq_obj : SequenceSeperate):
+
+    def embed(self, seq_obj : SequenceSeperate):
         """Call the model
 
         Args:
-            time_seqs (tensor): [batch_size, seq_len], timestamp seqs.
-            type_seqs (tensor): [batch_size, seq_len], event type seqs.
-            attention_mask (tensor): [batch_size, seq_len, seq_len], attention masks.
+            seq_obj
         Returns:
             tensor: hidden states at event times.
         """
 
-        embeddings = self.delay_embedding(
-            seq_obj.dtime_seqs, seq_obj.time_seqs, seq_obj.interarrival_time_seqs, 
-            seq_obj.slot_seqs, seq_obj.mcs_seqs, seq_obj.mretx_seqs, seq_obj.rfailed_seqs, seq_obj.len_seqs
+        # first, prepare the prev_dtime_seqs, which is shifted to the right by 1 and padding on the first position
+        # we pad the target part of the sequence as well
+        dtime_seqs = seq_obj.dtime_seqs[:, -self.src_seq_len-self.tgt_seq_len:]
+        prev_dtime_seqs = torch.zeros_like(dtime_seqs)
+        prev_dtime_seqs[:, 1:] = dtime_seqs[:, :-1]
+        prev_dtime_seqs[:, 0] = self.PAD_TOKEN
+        prev_dtime_seqs[:, self.src_seq_len:] = self.PAD_TOKEN
+
+        # fix interarrival_time_seqs and time_seqs
+        interarrival_time_seqs = seq_obj.interarrival_time_seqs[:, -self.src_seq_len-self.tgt_seq_len:]
+        time_seqs = seq_obj.time_seqs[:, -self.src_seq_len-self.tgt_seq_len:] # it is never used
+        len_seqs = seq_obj.len_seqs[:, -self.src_seq_len-self.tgt_seq_len:]
+
+        # now that we have all sequences ready, we should replace the tgt part of some of the sequences with the paddings
+        slot_seqs = torch.cat(
+            [
+                seq_obj.src_slot_seqs, 
+                seq_obj.tgt_slot_seqs if self.include_slot_in_tgt else self.slots_pad_id * torch.ones_like(seq_obj.tgt_dtime_seqs, device=self.device, dtype=torch.long)
+            ],
+            dim=1
         )
-        embeddings = self.pos_encoder(embeddings)
+
+        mcs_seqs = torch.cat(
+            [
+                seq_obj.src_mcs_seqs, 
+                seq_obj.tgt_mcs_seqs if self.include_mcs_in_tgt else self.mcs_pad_id * torch.ones_like(seq_obj.tgt_dtime_seqs, device=self.device, dtype=torch.long)
+            ],
+            dim=1
+        )
+        mretx_seqs = torch.cat(
+            [
+                seq_obj.src_mretx_seqs, 
+                seq_obj.tgt_mretx_seqs if self.include_mretx_in_tgt else self.mretx_pad_id * torch.ones_like(seq_obj.tgt_dtime_seqs, device=self.device, dtype=torch.long)
+            ],
+            dim=1
+        )
+        rfailed_seqs = torch.cat(
+            [
+                seq_obj.src_rfailed_seqs, 
+                seq_obj.tgt_rfailed_seqs if self.include_rfailed_in_tgt else self.rfailed_pad_id * torch.ones_like(seq_obj.tgt_dtime_seqs, device=self.device, dtype=torch.long)
+            ],
+            dim=1
+        )
+
+        # apply embedding on the whole sequences (seq_len = src + tgt)
+        embeddings = self.delay_embedding(
+            prev_dtime_seqs,  # prev_dtime
+            time_seqs, 
+            interarrival_time_seqs, 
+            slot_seqs, 
+            mcs_seqs, 
+            mretx_seqs, 
+            rfailed_seqs, 
+            len_seqs
+        )
         # embedding dims: [batch_size, seq_len, d_model]
 
-        # Shift the input embeddings to the right
-        shifted_embeddings = torch.zeros_like(embeddings)  # Initialize a zero tensor with the same shape as embedding
-        shifted_embeddings[:, 1:, :] = embeddings[:, :-1, :]  # Shift embeddings to the right
-        sh_src_embeddings = shifted_embeddings[:, -self.src_seq_len-self.tgt_seq_len:-self.tgt_seq_len, :]
-        # sh_src_embedding dims: [batch_size, src_seq_len, d_model]
+        # return the embeddings
+        return embeddings
+
+
+    def encode(self, embeddings_src, src_non_pad_mask):
+        """Call the model
+
+        Args:
+            embeddings_src (tensor): [batch_size, src_seq_len, d_model]
+        Returns:
+            tensor: hidden states at event times.
+        """
 
         # fix the mask
-        src_non_pad_mask_float = seq_obj.src_non_pad_mask.float()  # Optional if it's not already in float
+        src_non_pad_mask_float = src_non_pad_mask.float()  # Optional if it's not already in float
         src_attention_mask = src_non_pad_mask_float.unsqueeze(1) * src_non_pad_mask_float.unsqueeze(2)  # [batch_size, src_seq_len, src_seq_len, seq_len]
         src_attention_mask = src_attention_mask == 1
 
         # feed in the history data to the encoder
-        # [batch_size, src_seq_len, hidden_size]
-        enc_output = sh_src_embeddings
+        # [batch_size, src_seq_len, d_model]
+        enc_output = embeddings_src
         for idx, enc_layer in enumerate(self.encoder_layers):
             enc_output = enc_layer(
                 enc_output,
@@ -229,9 +283,10 @@ class TransformerE2E(TorchBaseModel):
         return dec_output
 
 
-    def get_dec_input_parallel(self, seq_obj : SequenceSeperate, is_teacher_forcing_now : bool):
-        # Suppose self.tgt_dtime_seqs.shape = [batch_size, tgt_seq_len].
-        batch_size, tgt_seq_len = seq_obj.tgt_dtime_seqs.size()
+    def get_dec_input_parallel(self, embeddings_tgt, tgt_non_pad_mask):
+        # note that dec_input is a tensor of shape [batch_size, tgt_seq_len, d_model]
+        # Suppose embeddings_tgt.shape = [batch_size, tgt_seq_len, d_model].
+        batch_size, tgt_seq_len, d_model = embeddings_tgt.size()
 
         # Create an all-PAD tensor
         dec_input = torch.full(
@@ -249,23 +304,9 @@ class TransformerE2E(TorchBaseModel):
         # Put the SOS token at position 0
         dec_input[:, 0, :] = torch.zeros((batch_size, self.d_model), device=self.device)
         pad_mask[:, 0] = True
-
-        # Copy ground-truth dtimes up to idx-1 into positions [1..idx]
-        idx = self.tgt_seq_len + self.src_seq_len - 1
-        idy = self.src_seq_len
-        tmp = seq_obj.dtime_seqs[:, idy:idx]
-        embeddings = self.delay_embedding(
-            seq_obj.dtime_seqs[:, idy:idx] if is_teacher_forcing_now else torch.ones_like(tmp, device=self.device, dtype=torch.long)*(-100.0),
-            seq_obj.time_seqs[:, idy:idx], 
-            seq_obj.interarrival_time_seqs[:, idy:idx], 
-            seq_obj.slot_seqs[:, idy:idx] if self.include_slot_in_tgt else self.slots_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long),
-            seq_obj.mcs_seqs[:, idy:idx] if self.include_mcs_in_tgt else self.mcs_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
-            seq_obj.mretx_seqs[:, idy:idx] if self.include_mretx_in_tgt else self.mretx_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
-            seq_obj.rfailed_seqs[:, idy:idx] if self.include_rfailed_in_tgt else self.rfailed_pad_id * torch.ones_like(tmp, device=self.device, dtype=torch.long), 
-            seq_obj.len_seqs[:, idy:idx]
-        )
-        dec_input[:, 1:] = embeddings
-        pad_mask[:, 1:] = seq_obj.non_pad_mask[:, idy:idx]
+        # copy the rest of the embeddings
+        dec_input[:, 1:] = embeddings_tgt[:, 1:]
+        pad_mask[:, 1:] = tgt_non_pad_mask[:, 1:]
         return dec_input, pad_mask.long()
 
     def append_dec_input(self, seq_obj : SequenceSeperate, idx : int, dec_out_step = None, prev_dec_input = None, prev_pad_mask = None):
@@ -312,11 +353,10 @@ class TransformerE2E(TorchBaseModel):
 
             slot, len, len_transformed, mcs, mretx, rfailed, num_rbs, time, dtime, \
                 dtime_transformed, etype, interarrival_time, interarrival_time_transformed, \
-                non_pad_mask, attention_mask = seq_obj.get_element_at_idx(self.src_seq_len + idx -1) # outputs all have [batch_size, 1]
-            # self.src_seq_len + idx -1 because idx starts from 0 and -1 due to the shift in the target sequence
+                non_pad_mask, attention_mask = seq_obj.get_element_at_idx(self.src_seq_len + idx) # outputs all have [batch_size, 1]
 
             embeddings_step = self.delay_embedding(
-                pred_dtime_step, 
+                pred_dtime_step, # this will be prev_dtime
                 time, 
                 interarrival_time, 
                 slot if self.include_slot_in_tgt else self.slots_pad_id * torch.ones_like(pred_dtime_step, device=self.device, dtype=torch.long),
@@ -337,23 +377,16 @@ class TransformerE2E(TorchBaseModel):
 
     def forward(self, seq_obj : SequenceSeperate, phase=None):
 
-        if phase == RunnerPhase.TRAIN:
-            forward = True
-        else:
-            forward = False
+        # apply embedding on the delay sequence
+        embeddings = self.embed(seq_obj)
+        # embeddings dim: [batch_size, seq_len = src_len + tgt_len, d_model]
 
-        # teacher forcing does not work for the last layer mlp
-        if self.teacher_forcing:
-            assert self.last_layer_mlp == False
-
-        is_teacher_forcing_now = self.teacher_forcing
-
-        if not forward:
-            is_teacher_forcing_now = False
+        # extract the src embedding
+        embeddings_src = embeddings[:, -self.src_seq_len-self.tgt_seq_len:-self.tgt_seq_len, :]
+        # src_embeddings dim: [batch_size, src_len, d_model]
 
         # apply embedding on the delay sequence
-        enc_output = self.encode(seq_obj)
-        #enc_output = torch.zeros_like(enc_output)  # Initialize a zero tensor with the same shape as enc_output
+        enc_output = self.encode(embeddings_src, seq_obj.src_non_pad_mask)
         # enc_output dim: [batch_size, src_seq_len, d_model]
  
         if self.last_layer_mlp:
@@ -364,28 +397,8 @@ class TransformerE2E(TorchBaseModel):
             mdn_params = mdn_params.view(-1, self.tgt_seq_len, self.mdn.num_params)
             num_predictions = seq_obj.tgt_non_pad_mask.sum(axis=0)
         else:     
-            # use decoder to predict the future
-            if self.decoder_type == 'parallel':
-                # parallel decoding: can be teacher forcing or not
-                # predicts the entire decoder sequence at once
-                # the output of the previous step will be either true values (in teacher forcing) or paddings
-                dec_input, tgt_pad_mask = self.get_dec_input_parallel(seq_obj, is_teacher_forcing_now)
-
-                # 4) Pass into the decoder
-                # dec_input: [batch_size, tgt_seq_len]
-                # enc_output: [batch_size, src_seq_len, d_model]
-                # src_pad_mask: [batch_size, src_seq_len] mask for encoder outputs (e.g. padding mask)
-                # tgt_pad_mask_tf: [batch_size, tgt_seq_len, tgt_seq_len] mask for decoder inputs (e.g. padding mask)
-                # dec_out => [batch_size, tgt_seq_len, d_model]
-                dec_out = self.decode(
-                    dec_input_emb=dec_input,
-                    enc_output=enc_output,
-                    src_pad_mask=seq_obj.src_non_pad_mask.float(),
-                    tgt_pad_mask=tgt_pad_mask
-                )
-                num_predictions = tgt_pad_mask.sum(axis=0)
-                mdn_params = self.mdn_head(dec_out)
-            else:
+            # use decoder to predict the target sequence
+            if self.include_prev_dtime_in_tgt:
                 # autoregressive decoding
                 # We'll store predictions for each time step
                 all_preds = []
@@ -429,6 +442,31 @@ class TransformerE2E(TorchBaseModel):
                 all_preds = torch.stack(all_preds, dim=1)
                 mdn_params = self.mdn_head(all_preds)
                 # mdn_params: [batch_size, tgt_seq_len, self.mdn.num_params]
+            else:
+                # parallel decoding
+                # predicts the entire decoder sequence at once
+                # the output of the previous step will be paddings
+                # extract the src embedding
+                embeddings_tgt = embeddings[:, -self.src_seq_len:, :]
+                # embeddings_tgt dim: [batch_size, tgt_len, d_model]
+
+                dec_input, tgt_pad_mask = self.get_dec_input_parallel(embeddings_tgt, seq_obj.tgt_non_pad_mask)
+
+                # 4) Pass into the decoder
+                # dec_input: [batch_size, tgt_seq_len]
+                # enc_output: [batch_size, src_seq_len, d_model]
+                # src_pad_mask: [batch_size, src_seq_len] mask for encoder outputs (e.g. padding mask)
+                # tgt_pad_mask_tf: [batch_size, tgt_seq_len, tgt_seq_len] mask for decoder inputs (e.g. padding mask)
+                # dec_out => [batch_size, tgt_seq_len, d_model]
+                dec_out = self.decode(
+                    dec_input_emb=dec_input,
+                    enc_output=enc_output,
+                    src_pad_mask=seq_obj.src_non_pad_mask.float(),
+                    tgt_pad_mask=tgt_pad_mask
+                )
+                num_predictions = tgt_pad_mask.sum(axis=0)
+                mdn_params = self.mdn_head(dec_out)
+
 
         return mdn_params, num_predictions
     
