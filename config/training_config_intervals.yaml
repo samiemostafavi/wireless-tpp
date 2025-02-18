@@ -219,3 +219,66 @@ transformer_5_NEW:
         include_mcs: False
         include_mretx: False
         include_rfailed: False
+
+
+
+lstmsingle_5_NEW:
+  base_config:
+    stage: train
+    backend: torch
+    runner_id: std_tpp
+    model_id: RecurrentE2ESingle
+  trainer_config:
+    weight_decay: 1.e-4 # important for encoder
+    batch_size: 64
+    max_epoch: 500
+    shuffle: False
+    optimizer: AdamW
+    lr_scheduler_mode: 'min'
+    lr_scheduler_patience: 5
+    lr_scheduler_factor: 0.5
+    learning_rate: 1.e-3
+    valid_freq: 5
+    use_tfb: False
+    metrics: [ 'acc', 'rmse' ]
+    seed: 2019
+    gpu: 0
+  model_config:
+    hidden_size: 16
+    use_ln: True
+    dropout_rate: 0.2 
+    noise_regularization:
+      dtime:
+        noise_type: 'gaussian'
+        std_dev: 0.1
+    model_specs:
+      concat_features: True
+      types_and_paddings:
+        slot: [21, 20] # slot indices: 0 to 19 (20 types), and padding token
+        mcs: [30, 29] # MCS indices: 0 to 28 (29 types), and padding token
+        mretx: [9, 8] # retransmission numbers: 0 to 7 (9 types), and padding token
+        rfailed: [9, 8] # failed attempt numbers: 0 to 7 (9 types), and padding token
+        num_rbs: [107, 106] # number of rbs 0-106 (107 types), and padding token
+      last_layer_mlp: False
+      rnn_type: 'lstm'
+      num_layers: 2
+      bidirectional: False
+      mdn:
+        num_mix_components: 8
+      tgt_seq_len: 5
+      src_seq_len: 5
+      embeddings:
+        include_prev_dtime: True
+        include_interarrival_time: True
+        include_time: False # False always
+        include_len: False
+        include_slot: True
+        include_mcs: True
+        include_mretx: True
+        include_rfailed: True
+      target:
+        include_prev_dtime: False # important as it switches the prediction from parallel to autoregressive
+        include_slot: False # if True, helps LSTM a lot, degrades transformer
+        include_mcs: False
+        include_mretx: False
+        include_rfailed: False
