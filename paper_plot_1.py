@@ -29,23 +29,24 @@ plt.rcParams.update({
 })
 
 # Path to the `data` directory
-base_path = Path("./data/intervals_final_results/e2e/prediction_results")
+base_path = Path("./data/intervals_results/e2e/prediction_results")
 
-figures_path = Path("./figures")
+figures_path = Path("./figures_NEW")
 # Create the figures directory if it doesn't exist
 figures_path.mkdir(parents=True, exist_ok=True)
 
 # Categories and history lengths to plot
 categories = {
     'Training Size': [1, 2.5, 5, 10],
-    'Type' : ['mlp', 'lstm', 'transformer'], # 'mlp', 'lstm', 'transformer', 'lstmmlp', 'transformermlp'
+    'Type' : ['mlp', 'lstm', 'lstmsingle', 'transformer'], # 'mlp', 'lstm', 'transformer', 'lstmmlp', 'transformermlp'
     'Window Length': [5, 20, 50, 100],
-    'Auxiliary': [] # 't8', 't12', 't20', 't24', 'noretx'
+    'Auxiliary': ["NEW"] # 't8', 't12', 't20', 't24', 'noretx'
 }
 
 type_labels = {
     'mlp': 'MLP',
     'lstm': 'LSTM',
+    'lstmsingle': 'LSTM-SS',
     'transformer': 'Transformer',
     'lstmmlp': 'LSTM-MLP',
     'transformermlp': 'Transformer-MLP'
@@ -285,7 +286,7 @@ for model_dict in data:
 ########################### Combined Plot Loglike ################################
 
 # Create a new figure for combined plots
-plt.figure(figsize=(3.5, 2.5))
+plt.figure(figsize=(4, 2.5))
 
 # Plot a line for each model type and training size
 for idx, model_type in enumerate(categories['Type']):
@@ -293,7 +294,7 @@ for idx, model_type in enumerate(categories['Type']):
     subset = [
         r for r in data
         if r['Type'] == model_type
-        and r['Training Size'] == categories['Training Size'][-2]
+        and r['Training Size'] == categories['Training Size'][-2] # take 5k training size
         and r['Window Length'] in categories['Window Length']
     ]
 
@@ -324,7 +325,7 @@ plt.close()
 # For each window length, create and save a separate figure
 for w_length in categories['Window Length']:
     # Create a new figure
-    plt.figure(figsize=(3.5, 2.5))
+    plt.figure(figsize=(4, 2.5))
 
     # Plot a line for each model type
     for idx, model_type in enumerate(categories['Type']):
@@ -361,7 +362,7 @@ for w_length in categories['Window Length']:
 ########################### Combined MAE Plot ################################
 
 # Create a new figure for combined plots
-plt.figure(figsize=(3.5, 2.5))
+plt.figure(figsize=(4, 2.5))
 
 # Plot a line for each model type and training size
 for idx,model_type in enumerate(categories['Type']):
@@ -369,7 +370,7 @@ for idx,model_type in enumerate(categories['Type']):
     subset = [
         r for r in data
         if r['Type'] == model_type
-        and r['Training Size'] == categories['Training Size'][-2]
+        and r['Training Size'] == categories['Training Size'][-2] # take 5k training size
         and r['Window Length'] in categories['Window Length']
     ]
 
@@ -400,7 +401,7 @@ plt.close()
 # For each window length, create and save a separate figure
 for w_length in categories['Window Length']:
     # Create a new figure
-    plt.figure(figsize=(3.5, 2.5))
+    plt.figure(figsize=(4, 2.5))
 
     # Plot a line for each model type
     for idx, model_type in enumerate(categories['Type']):
@@ -438,7 +439,7 @@ for w_length in categories['Window Length']:
 ########################### Training Time Plot ################################
 
 # Create a new figure
-plt.figure(figsize=(3.5, 2.5))
+plt.figure(figsize=(4, 2.5))
 
 # Plot a line for each model type
 for idx,model_type in enumerate(categories['Type']):

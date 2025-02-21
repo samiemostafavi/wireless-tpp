@@ -105,32 +105,21 @@ class MLPE2E(TorchBaseModel):
         mdn_params, num_predictions = self.forward(seq_obj)
         # mdn_params: [batch_size, 1, self.mdn.num_params]
 
-        if phase == RunnerPhase.TRAIN or phase == RunnerPhase.VALIDATE:
-            # we only consider the first element of the tgt sequence for ll loss
+        # here we calculate the negative log likelihood loss for all the labels in the tgt sequence length
+        # the mdn_params we repeat the same for all the tgt sequence length
 
-            labels = seq_obj.tgt_dtime_seqs_transformed[:, :1]
-            # labels: [batch_size, 1]
+        # repeat the mdn_params for the tgt sequence length
+        # input: [batch_size, 1, self.mdn.num_params]
+        mdn_params = mdn_params.repeat(1, self.tgt_seq_len, 1)
+        num_predictions = num_predictions.repeat(self.tgt_seq_len)
+        # output: [batch_size, tgt_seq_len, self.mdn.num_params]
 
-            nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask[:, :1])
-            num_predictions_nll = nll_mask.sum(axis=0)
-            assert np.array_equal(num_predictions.cpu().numpy(), num_predictions_nll.cpu().numpy())
+        labels = seq_obj.tgt_dtime_seqs_transformed
+        # labels: [batch_size, tgt_seq_len]
 
-        else: # phase == RunnerPhase.EVALUATE or phase == RunnerPhase.PREDICT
-            # here we calculate the negative log likelihood loss for all the labels in the tgt sequence length
-            # the mdn_params we repeat the same for all the tgt sequence length
-
-            # repeat the mdn_params for the tgt sequence length
-            # input: [batch_size, 1, self.mdn.num_params]
-            mdn_params = mdn_params.repeat(1, self.tgt_seq_len, 1)
-            num_predictions = num_predictions.repeat(self.tgt_seq_len)
-            # output: [batch_size, tgt_seq_len, self.mdn.num_params]
-
-            labels = seq_obj.tgt_dtime_seqs_transformed
-            # labels: [batch_size, tgt_seq_len]
-
-            nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask)
-            num_predictions_nll = nll_mask.sum(axis=0)
-            assert np.array_equal(num_predictions.cpu().numpy(), num_predictions_nll.cpu().numpy())
+        nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask)
+        num_predictions_nll = nll_mask.sum(axis=0)
+        assert np.array_equal(num_predictions.cpu().numpy(), num_predictions_nll.cpu().numpy())
 
         return nll, nll_mask
 

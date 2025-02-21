@@ -543,25 +543,16 @@ class RecurrentE2ESingle(TorchBaseModel):
         mdn_params, num_predictions = self.forward(seq_obj, phase)
         # mdn_params: [batch_size, 1, self.mdn.num_params]
 
-        if phase == RunnerPhase.TRAIN or phase == RunnerPhase.VALIDATE:
-            labels = seq_obj.tgt_dtime_seqs_transformed[:, :1]
-            # labels: [batch_size, 1]
+        # repeat the mdn_params for the tgt sequence length
+        mdn_params = mdn_params.repeat(1, self.tgt_seq_len, 1)
+        # output: [batch_size, tgt_seq_len, self.mdn.num_params]
 
-            nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask[:, :1])
-            num_predictions_nll = nll_mask.sum(axis=0)
-            assert np.array_equal(num_predictions, sum(num_predictions_nll.cpu().numpy()))
+        labels = seq_obj.tgt_dtime_seqs_transformed
+        # labels: [batch_size, tgt_seq_len]
 
-        else:  
-            # repeat the mdn_params for the tgt sequence length
-            mdn_params = mdn_params.repeat(1, self.tgt_seq_len, 1)
-            # output: [batch_size, tgt_seq_len, self.mdn.num_params]
-
-            labels = seq_obj.tgt_dtime_seqs_transformed
-            # labels: [batch_size, tgt_seq_len]
-
-            nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask)
-            num_predictions_nll = nll_mask.sum(axis=0)
-            assert np.array_equal(num_predictions*self.tgt_seq_len, sum(num_predictions_nll.cpu().numpy()))
+        nll, nll_mask = self.mdn.negative_loglikelihood(mdn_params, labels, seq_obj.tgt_non_pad_mask)
+        num_predictions_nll = nll_mask.sum(axis=0)
+        assert np.array_equal(num_predictions*self.tgt_seq_len, sum(num_predictions_nll.cpu().numpy()))
 
         return nll, nll_mask
 
