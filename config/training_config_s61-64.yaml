@@ -3,43 +3,43 @@ pipeline_config_id: runner_config
 data:
 
   1k:
-    train_dir:  ./data/s61-64_results/e2e/datasets/sub1k/train.pkl
-    valid_dir:  ./data/s61-64_results/e2e/datasets/sub1k/dev.pkl
-    test_dir:  ./data/s61-64_results/e2e/datasets/sub1k/test.pkl
+    train_dir:  ./data/s61-64_results/e2e/datasets/sub_train1k/train.pkl
+    valid_dir:  ./data/s61-64_results/e2e/datasets/sub_train1k/dev.pkl
+    test_dir:  ./data/s61-64_results/e2e/datasets/sub_train1k/test.pkl
     data_specs:
       num_event_types: 1 # max number of segments + 1
       pad_token_id: 1
       padding_strategy: do_not_pad
 
   2p5k:
-    train_dir:  ./data/s61-64_results/e2e/datasets/sub2p5k/train.pkl
-    valid_dir:  ./data/s61-64_results/e2e/datasets/sub2p5k/dev.pkl
-    test_dir:  ./data/s61-64_results/e2e/datasets/sub2p5k/test.pkl
+    train_dir:  ./data/s61-64_results/e2e/datasets/sub_train2p5k/train.pkl
+    valid_dir:  ./data/s61-64_results/e2e/datasets/sub_train2p5k/dev.pkl
+    test_dir:  ./data/s61-64_results/e2e/datasets/sub_train2p5k/test.pkl
     data_specs:
       num_event_types: 1 # max number of segments + 1
       pad_token_id: 1
       padding_strategy: do_not_pad
 
   5k:
-    train_dir:  ./data/s61-64_results/e2e/datasets/sub5k/train.pkl
-    valid_dir:  ./data/s61-64_results/e2e/datasets/sub5k/dev.pkl
-    test_dir:  ./data/s61-64_results/e2e/datasets/sub5k/test.pkl
+    train_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k/train.pkl
+    valid_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k/dev.pkl
+    test_dir:  ./data/s61-64_results/e2e/datasets/sub_train5k/test.pkl
     data_specs:
       num_event_types: 1 # max number of segments + 1
       pad_token_id: 1
       padding_strategy: do_not_pad
 
   10k:
-    train_dir:  ./data/s61-64_results/e2e/datasets/sub10k/train.pkl
-    valid_dir:  ./data/s61-64_results/e2e/datasets/sub10k/dev.pkl
-    test_dir:  ./data/s61-64_results/e2e/datasets/sub10k/test.pkl
+    train_dir:  ./data/s61-64_results/e2e/datasets/sub_train10k/train.pkl
+    valid_dir:  ./data/s61-64_results/e2e/datasets/sub_train10k/dev.pkl
+    test_dir:  ./data/s61-64_results/e2e/datasets/sub_train10k/test.pkl
     data_specs:
       num_event_types: 1 # max number of segments + 1
       pad_token_id: 1
       padding_strategy: do_not_pad
 
 
-mlp:
+mlp_100_NEW:
   base_config:
     stage: train
     backend: torch
@@ -69,7 +69,8 @@ mlp:
         noise_type: 'gaussian'
         std_dev: 0.1
     model_specs:
-      tgt_seq_len: 20
+      tgt_seq_len: 100
+      src_seq_len: 100
       concat_features: False
       types_and_paddings: 
         slot: [21, 20] # slot indices: 0 to 19 (20 types), and padding token
@@ -80,22 +81,21 @@ mlp:
       mdn:
         num_mix_components: 8
       embeddings:
-        include_dtime: False # Must be False always
-        include_interarrival_time: True
-        include_time: False
+        include_prev_dtime: True
+        include_interarrival_time: True 
+        include_time: False # Must be False always
         include_len: False
         include_slot: True
         include_mcs: True
-        include_mretx: False # must be false
-        include_rfailed: False # must be false
+        include_mretx: True
+        include_rfailed: True
 
-
-lstm_5:
+lstmsingle_100_NEW:
   base_config:
     stage: train
     backend: torch
     runner_id: std_tpp
-    model_id: RecurrentE2E
+    model_id: RecurrentE2ESingle
   trainer_config:
     weight_decay: 1.e-4 # important for encoder
     batch_size: 64
@@ -128,29 +128,30 @@ lstm_5:
         rfailed: [9, 8] # failed attempt numbers: 0 to 7 (9 types), and padding token
         num_rbs: [107, 106] # number of rbs 0-106 (107 types), and padding token
       last_layer_mlp: False
-      teacher_forcing: False
       rnn_type: 'lstm'
       num_layers: 2
       bidirectional: False
       mdn:
         num_mix_components: 8
-      tgt_seq_len: 5
-      src_seq_len: 5
+      tgt_seq_len: 100
+      src_seq_len: 100
       embeddings:
-        include_dtime: True # Must be True always
+        include_prev_dtime: True
         include_interarrival_time: True
-        include_time: False
+        include_time: False # False always
         include_len: False
         include_slot: True
         include_mcs: True
         include_mretx: True
         include_rfailed: True
       target:
+        include_prev_dtime: False # important as it switches the prediction from parallel to autoregressive
+        include_slot: False # if True, helps LSTM a lot, degrades transformer
         include_mcs: False
         include_mretx: False
         include_rfailed: False
 
-lstm_mlp_5:
+lstm_5_EXC:
   base_config:
     stage: train
     backend: torch
@@ -187,100 +188,31 @@ lstm_mlp_5:
         mretx: [9, 8] # retransmission numbers: 0 to 7 (9 types), and padding token
         rfailed: [9, 8] # failed attempt numbers: 0 to 7 (9 types), and padding token
         num_rbs: [107, 106] # number of rbs 0-106 (107 types), and padding token
-      last_layer_mlp: True
-      teacher_forcing: False
+      last_layer_mlp: False
       rnn_type: 'lstm'
       num_layers: 2
       bidirectional: False
-      mdn:
-        num_mix_components: 6
-      tgt_seq_len: 5
-      src_seq_len: 5
-      embeddings:
-        include_dtime: True # Must be True always
-        include_interarrival_time: True
-        include_time: False
-        include_len: False
-        include_slot: False
-        include_mcs: True
-        include_mretx: False
-        include_rfailed: False
-      target:
-        include_mcs: False
-        include_mretx: False
-        include_rfailed: False
-
-transformer_5:
-  base_config:
-    stage: train
-    backend: torch
-    runner_id: std_tpp
-    model_id: TransformerE2E
-  trainer_config:
-    weight_decay: 1.e-4 # important for encoder
-    batch_size: 64
-    max_epoch: 500
-    shuffle: False
-    optimizer: AdamW
-    lr_scheduler_mode: 'min'
-    lr_scheduler_patience: 2
-    lr_scheduler_factor: 0.5
-    learning_rate: 5.e-3 # was 1.e-3, but 5.e-4 is better  
-    valid_freq: 5
-    use_tfb: False
-    metrics: [ 'acc', 'rmse' ]
-    seed: 2019
-    gpu: 0
-  model_config:
-    hidden_size: 16 # tried 32 and 24, did not work better
-    use_ln: True
-    dropout_rate: 0.2 # tried 0.2, did not work better
-    noise_regularization:
-      dtime:
-        noise_type: 'gaussian'
-        std_dev: 0.1
-    model_specs:
-      types_and_paddings: 
-        slot: [21, 20] # slot indices: 0 to 19 (20 types), and padding token
-        mcs: [30, 29] # MCS indices: 0 to 28 (29 types), and padding token
-        mretx: [9, 8] # retransmission numbers: 0 to 7 (9 types), and padding token
-        rfailed: [9, 8] # failed attempt numbers: 0 to 7 (9 types), and padding token
-        num_rbs: [107, 106] # number of rbs 0-106 (107 types), and padding token
-      concat_features: True # SO important when include_mcs and more, otherwise model does not learn 
-      last_layer_mlp: False
-      teacher_forcing: False
-      encoder:
-        ff_exp_rate: 8
-        num_heads: 4
-        num_layers: 6 # tried 8, did not work better, generally 6 is good. A small number like 1 or 2 won't work, tried 4 also did not work as good.
-        use_residual: True # super important, otherwise model does not learn
-      decoder:
-        ff_exp_rate: 8
-        type: 'parallel' # can be 'autoregressive' or 'parallel'
-        num_self_heads: 4
-        num_cross_heads: 4
-        num_layers: 6 # 6
-        use_residual: True # super important, otherwise model does not learn
       mdn:
         num_mix_components: 8
       tgt_seq_len: 5
       src_seq_len: 5
       embeddings:
-        include_dtime: True # Must be True always
+        include_prev_dtime: False
         include_interarrival_time: True
-        include_time: False
+        include_time: False # False always
         include_len: False
         include_slot: True
         include_mcs: True
-        include_mretx: False
-        include_rfailed: False
+        include_mretx: True
+        include_rfailed: True
       target:
+        include_prev_dtime: False # important as it switches the prediction from parallel to autoregressive
+        include_slot: False # if True, helps LSTM a lot, degrades transformer
         include_mcs: False
         include_mretx: False
         include_rfailed: False
 
-
-transformer_mlp:
+transformer_50_NEW:
   base_config:
     stage: train
     backend: torch
@@ -317,8 +249,7 @@ transformer_mlp:
         rfailed: [9, 8] # failed attempt numbers: 0 to 7 (9 types), and padding token
         num_rbs: [107, 106] # number of rbs 0-106 (107 types), and padding token
       concat_features: True # SO important when include_mcs and more, otherwise model does not learn 
-      last_layer_mlp: True
-      teacher_forcing: False
+      last_layer_mlp: False
       encoder:
         ff_exp_rate: 32
         num_heads: 4
@@ -326,25 +257,26 @@ transformer_mlp:
         use_residual: True # super important, otherwise model does not learn
       decoder:
         ff_exp_rate: 32
-        type: 'parallel' # can be 'autoregressive' or 'parallel'
         num_self_heads: 4
         num_cross_heads: 4
         num_layers: 6 # 6
         use_residual: True # super important, otherwise model does not learn
       mdn:
         num_mix_components: 8
-      tgt_seq_len: 20
-      src_seq_len: 20
+      tgt_seq_len: 50
+      src_seq_len: 50
       embeddings:
-        include_dtime: True # Must be True always
-        include_time: False
+        include_prev_dtime: True # Must be False always
         include_interarrival_time: True
+        include_time: False
         include_len: False
-        include_slot: False
+        include_slot: True
         include_mcs: True
         include_mretx: True
         include_rfailed: True
       target:
+        include_prev_dtime: False # important as it switches the prediction from parallel to autoregressive
+        include_slot: False
         include_mcs: False
         include_mretx: False
         include_rfailed: False

@@ -18,10 +18,10 @@ Create training sub-dataset using the same command but with `-f` argument (which
 This command is fast compared to the previous one.
 Set the `split_ratios`, `window_config`, and the number of samples `dataset_size_max` in the dataset config file according to your setting and run:
 ```
+python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train1k -f
+python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train2p5k -f
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train5k -f
 python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train10k -f
-python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train20k -f
-python main.py -t e2e -u create_training_dataset -v -s data/intervals_results -c config/dataset_config.json -g intervals_e2e_train -n sub_train50k -f
 ```
 
 You can also pass `-r 2` argument to specify for how many times the random selection of sequences from the main datasets to be done. `-r 2` will create 2 subdatasets, simillar size and profile only 2 different sample sets.
@@ -42,41 +42,24 @@ python main.py -t e2e -u train_model -s data/s61-64_results -c config/training_c
 Here `-n` specifies the dataset id in the yaml file to train the model with and `-i` sepcifies the model in the config file.
 
 ## 3. Evaluate an e2e model <a href='#top'>[Back to Top]</a>
-```
-python main.py -t e2e -u evaluate_model -s data/intervals_results -c config/e2e_prediction_config.json -g intervals_e2e_eval -n test10k_oa_single_mlp -i 2199105_140148183655040_250120-184431
-python main.py -t e2e -u evaluate_model -s data/intervals_results -c config/e2e_prediction_config.json -g intervals_e2e_eval -n test10k_oa_40ev_rnn -i 2199105_140148183655040_250120-184431
-python main.py -t e2e -u evaluate_model -s data/intervals_results -c config/e2e_prediction_config.json -g intervals_e2e_eval -n test10k_oa_40ev_transformer -i 2199105_140148183655040_250120-184431
-```
 
+Modify the prediction config json file with your desired entry in it. Then evaluate the trained models using the commands as follows:
+```
+python main.py -t e2e -u evaluate_model -s data/intervals_results -c config/prediction_config.json -g intervals_e2e_eval -n 10k_mlp_50_EXC -i 2199105_140148183655040_250120-184431
+python main.py -t e2e -u evaluate_model -s data/intervals_results -c config/prediction_config.json -g intervals_e2e_eval -n 10k_lstmsingle_50_EXC -i 2199105_140148183655040_250120-184431
+python main.py -t e2e -u evaluate_model -s data/intervals_results -c config/prediction_config.json -g intervals_e2e_eval -n 10k_transformer_50_EXC -i 2199105_140148183655040_250120-184431
+```
+If there is only one model trained, you can ignore `-i` option and only pass the name of the model like:
+```
+python main.py -t e2e -u evaluate_model -s data/s61-64_results -c config/prediction_config.json -g intervals_e2e_eval -n 10k_transformer_50_EXC
+```
+The results will be saved in a json file in a new folder with the same name as the trained model in `prediction_results` folder.
 
 ## 4. Validate a trained scheduling model <a href='#top'>[Back to Top]</a>
 
-Using the following commands, you can visually validate how the predictor works. We plot random instances in the test part of the dataset or any dataset specified in the configuration json (if the dataset name and id is left empty, we use the training dataset).
-Make sure you have an entry in the `prediction_config.json` config file with the prediction configurations like number of samples etc.
-We can either do PDF prediction or sampling prediction. You can run probabilistic predictions (PDF) using `-p probabilistic` or sample the predictor `-p sampling` in the prediction command below.
-The arguments `-n NAME` and `-i ID` are corresponding to the trained model that you desire to validate.
-```
-python main.py -t e2e -u generate_predictions -s data/intervals_results -p probabilistic -c config/prediction_config.json -g intervals_e2e_eval -n test10k_200_final_retx_transformer -i 3789998_140084062102144_250124-210058
-```
-After the predictions are done, we will have in `scheduling/prediction_results/NAME/PREDICTION_ID` folder, all the information and `pred.pkl` file that holds the produced results.
 
-Then we can plot the results using the following commands:
+First two figures of the paper are made via:
 ```
-python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1649824_140555386548864_250108-082849 -m 1
-python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1124079_140705547641472_241203-105910 -m 2
-python main.py -t scheduling -u plot_predictions -s data/s63_results -n test0 -i 1124079_140705547641472_241203-105910 -m 3
-
-python main.py -t scheduling -u plot_predictions -s data/multi_size_scheduling -n test10k -i 1678035_140564617605760_250108-181906 -m 1
-python main.py -t scheduling -u plot_predictions -s data/multi_size_scheduling -n test10k -i 1688384_140045867438720_250109-030445 -m 1
-```
-The argument `-m` corresponds to the segment number if you want to see the prediction for a specific segment.
-
-## 5. Evaluate a trained scheduling model <a href='#top'>[Back to Top]</a>
-
-Simillar to validation, this is how you can evaluate a model against a certain dataset specified in the entry in the config file `scheduling_prediction_config.json`.
-Run predictions over the test dataset and produce a json with evaluation metrics.
-```
-python main.py -t scheduling -u evaluate_model -s data/s63_results -c config/prediction_config.json -g s63_scheduling -n test0 -i 1365509_140428493193856_241228-132954
-python main.py -t scheduling -u evaluate_model -s data/s61-64_results -c config/prediction_config.json -g s61-64_scheduling_eval -n test0 -i 1365509_140428493193856_241228-132954
-python main.py -t scheduling -u evaluate_model -s data/multi_size_scheduling -c config/prediction_config.json -g multi_size_scheduling_eval -n test10k -i 1672127_140492844757632_250108-170748
+python paper_plot_valid.py -s data/s61-64_results -c config/prediction_config.json -g validate -n 10k_transformer_100_EXC
+python paper_plot_valid.py -s data/s61-64_results -c config/prediction_config.json -g validate -n 10k_mlp_100_EXC
 ```

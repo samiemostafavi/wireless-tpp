@@ -29,18 +29,35 @@ plt.rcParams.update({
 })
 
 # Path to the `data` directory
-base_path = Path("./data/intervals_results/e2e/prediction_results")
+base_path1 = Path("./data/intervals_results/e2e/prediction_results")
+base_path2 = Path("./data/intervals_final_results/e2e/prediction_results")
 
-figures_path = Path("./figures_NEW")
+
+figures_path = Path("./figures_intervals")
+#figures_path = Path("./figures_intervals_final")
+#figures_path = Path("./figures_s61-64_NEW")
+#figures_path = Path("./figures_s61-64_EXC")
+
+
+
+# for the combined plots, set which number of samples to plot
+train_size_ind = -1 # -1: 10k, -2: 5k, -3: 2.5k, -4: 1k
+
 # Create the figures directory if it doesn't exist
 figures_path.mkdir(parents=True, exist_ok=True)
 
 # Categories and history lengths to plot
-categories = {
+categories1 = {
     'Training Size': [1, 2.5, 5, 10],
-    'Type' : ['mlp', 'lstm', 'lstmsingle', 'transformer'], # 'mlp', 'lstm', 'transformer', 'lstmmlp', 'transformermlp'
+    'Type' : ['mlp', 'lstm', 'transformer'], # 'mlp', 'lstm', 'transformer', 'lstmsingle' 
     'Window Length': [5, 20, 50, 100],
-    'Auxiliary': ["NEW"] # 't8', 't12', 't20', 't24', 'noretx'
+    'Auxiliary': ["NEW"] # 't8', 't12', 't20', 't24', 'noretx', "NEW"
+}
+categories2 = {
+    'Training Size': [1, 2.5, 5, 10],
+    'Type' : ['mlp', 'lstm', 'transformer'], # 'mlp', 'lstm', 'transformer', 'lstmsingle' 
+    'Window Length': [5, 20, 50, 100],
+    'Auxiliary': [] # 't8', 't12', 't20', 't24', 'noretx', "NEW"
 }
 
 type_labels = {
@@ -51,27 +68,6 @@ type_labels = {
     'lstmmlp': 'LSTM-MLP',
     'transformermlp': 'Transformer-MLP'
 }
-
-
-# Plot these
-to_plot = {
-    "loglike" : "Negative Log-Likelihood", 
-    "mae" : "Mean Absolute Error [ms]", 
-    "coverage": {
-        "coverage_50" : "50% Coverage",
-        "coverage_70" : "70% Coverage",
-        "coverage_90" : "90% Coverage",
-        "coverage_99" : "99% Coverage"
-    }
-}
-
-# Y-axis labels
-y_axis_labels = {
-    "loglike": "Standardized Test NLL",
-    "mae": "Delay MAE [ms]",
-    "coverage": "Coverage Error [log]"
-}
-
 
 # check all folders inside the path_with_types, open the yaml file in them and get these:
 # yaml_config['model_config']['model_specs']['last_layer_mlp'] corresponds to 'Forecasting Model'
@@ -193,33 +189,32 @@ def extract_evaluation_log_details(file_path):
 #     'coverage_999': float
 # }
 
-data = []
-for s in categories['Training Size']:
+data1 = []
+for s in categories1['Training Size']:
     res_s = {
         "Training Size" : s,
         "Type" : None,
         "Window Length" : None,
         "Auxiliary" : None,
-        "Path" : str(base_path / f"{float_to_str(s)}k")
+        "Path" : str(base_path1 / f"{float_to_str(s)}k")
     }
-    for t in categories['Type']:
+    for t in categories1['Type']:
         res_t = copy.deepcopy(res_s)
         res_t["Type"] = t
         res_t["Path"] = res_s["Path"] + f"_{t}"
-        for h in categories['Window Length']:
+        for h in categories1['Window Length']:
             res_h = copy.deepcopy(res_t)
             res_h["Window Length"] = h
             res_h["Path"] = res_t["Path"] + f"_{h}"
-            for k in categories['Auxiliary']:
+            for k in categories1['Auxiliary']:
                 res_k = copy.deepcopy(res_h)
                 res_k["Auxiliary"] = k
                 res_k["Path"] = res_h["Path"] + f"_{k}"
-                data.append(res_k)
-            if len(categories['Auxiliary']) == 0:
-                data.append(res_h)
+                data1.append(res_k)
+            if len(categories1['Auxiliary']) == 0:
+                data1.append(res_h)
 
-
-for model_dict in data:
+for model_dict in data1:
     model_path = Path(model_dict['Path'])
     model_type = model_dict['Type']
     if not model_path.exists():
@@ -283,157 +278,96 @@ for model_dict in data:
         model_dict['inference_time'] = inference_time
         model_dict['results'] = results_json
 
-########################### Combined Plot Loglike ################################
 
-# Create a new figure for combined plots
-plt.figure(figsize=(4, 2.5))
 
-# Plot a line for each model type and training size
-for idx, model_type in enumerate(categories['Type']):
-    # Filter data for the current type & training size
-    subset = [
-        r for r in data
-        if r['Type'] == model_type
-        and r['Training Size'] == categories['Training Size'][-2] # take 5k training size
-        and r['Window Length'] in categories['Window Length']
-    ]
+data2 = []
+for s in categories2['Training Size']:
+    res_s = {
+        "Training Size" : s,
+        "Type" : None,
+        "Window Length" : None,
+        "Auxiliary" : None,
+        "Path" : str(base_path2 / f"{float_to_str(s)}k")
+    }
+    for t in categories2['Type']:
+        res_t = copy.deepcopy(res_s)
+        res_t["Type"] = t
+        res_t["Path"] = res_s["Path"] + f"_{t}"
+        for h in categories2['Window Length']:
+            res_h = copy.deepcopy(res_t)
+            res_h["Window Length"] = h
+            res_h["Path"] = res_t["Path"] + f"_{h}"
+            for k in categories2['Auxiliary']:
+                res_k = copy.deepcopy(res_h)
+                res_k["Auxiliary"] = k
+                res_k["Path"] = res_h["Path"] + f"_{k}"
+                data2.append(res_k)
+            if len(categories2['Auxiliary']) == 0:
+                data2.append(res_h)
 
-    # Sort by Window Length for left-to-right plotting
-    subset.sort(key=lambda x: x['Window Length'])
+for model_dict in data2:
+    model_path = Path(model_dict['Path'])
+    model_type = model_dict['Type']
+    if not model_path.exists():
+        print(f"Path does not exist for model path: {model_path}")
+        continue
+    
+    # Each subfolder is expected to contain exactly one YAML file and exactly one JSON file
+    for subfolder in model_path.iterdir():
+        if not subfolder.is_dir():
+            continue
+        
+        # Find the YAML config
+        yaml_files = list(subfolder.glob("*.yaml"))
+        if len(yaml_files) != 1:
+            # Either no YAML or more than one found, skip
+            continue
+        config_path = yaml_files[0]
 
-    # Extract x (Window Length) and y (loglike)
-    x_vals = [r['Window Length'] for r in subset]
-    y_vals = [-r['results']['loglike'] for r in subset]
+        evaluation_log_file = subfolder / "log"
+        evaluation_time = extract_evaluation_log_details(evaluation_log_file)
+        
+        # Find the JSON results
+        json_files = list(subfolder.glob("*.json"))
+        if len(json_files) != 1:
+            # Either no JSON or more than one found, skip
+            continue
+        results_path = json_files[0]
+        
+        # Load YAML config
+        with open(config_path, 'r') as f:
+            yaml_config = yaml.safe_load(f)
 
-    # Plot if we have valid data
-    if x_vals and y_vals:
-        plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=f"{type_labels[model_type]}")
 
-# Labels, title, legend
-plt.xlabel("Prediction Horizon (L)")
-plt.ylabel("Standardized NLL")
-plt.legend()
-plt.grid(True)
+        trained_model_path = Path(yaml_config['model_config']['pretrained_model_dir'])
+        trained_model_path = trained_model_path.parent.parent # go back two levels
+        training_log_file = trained_model_path / "log"
+        num_params, avg_training_epoch_time, num_training_events = extract_training_log_details(training_log_file)
+        
+        # For MLP, we do not have 'Forecasting Model' nor 'History Length'
+        if model_type == "mlp":
+            h_len = 1 # this is training sequence length
+            tgt_len = 1 # this is training sequence length
+        else:
+            # Read history length if available (default 'Unknown' if not)
+            h_len = int(yaml_config['model_config']['model_specs'].get('src_seq_len', 'Unknown'))
+            tgt_len = int(yaml_config['model_config']['model_specs']['tgt_seq_len'])
+        
+        # Load JSON results
+        with open(results_path, 'r') as f:
+            results_json = json.load(f)
+        
+        # calc training and evaluation times per sequence
+        
+        num_sequences = num_training_events/h_len
+        training_time = avg_training_epoch_time / num_sequences
+        inference_time = evaluation_time / num_sequences
 
-# Adjust layout and save to PDF
-plt.tight_layout()
-plt.savefig(figures_path / "combined_loglike_plot.pdf")
-plt.close()
-
-########################### NLL Plot ################################
-
-# For each window length, create and save a separate figure
-for w_length in categories['Window Length']:
-    # Create a new figure
-    plt.figure(figsize=(4, 2.5))
-
-    # Plot a line for each model type
-    for idx, model_type in enumerate(categories['Type']):
-        # Filter data for the current type & window length
-        subset = [
-            r for r in data
-            if r['Type'] == model_type
-            and r['Window Length'] == w_length
-            and r['Training Size'] in categories['Training Size']
-        ]
-
-        # Sort by Training Size for left-to-right plotting
-        subset.sort(key=lambda x: x['Training Size'])
-
-        # Extract x (Training Size) and y (loglike)
-        x_vals = [r['Training Size'] for r in subset]
-        y_vals = [-r['results']['loglike'] for r in subset]
-
-        # Plot if we have valid data
-        if x_vals and y_vals:
-            plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=type_labels[model_type])
-
-    # Labels, title, legend
-    plt.xlabel("Training Size [x1000 samples]")
-    plt.ylabel("Standardized NLL")
-    plt.legend()
-    plt.grid(True)
-
-    # Adjust layout and save to PDF
-    plt.tight_layout()
-    plt.savefig(figures_path / f"loglike_plot_w{w_length}.pdf")
-    plt.close()
-
-########################### Combined MAE Plot ################################
-
-# Create a new figure for combined plots
-plt.figure(figsize=(4, 2.5))
-
-# Plot a line for each model type and training size
-for idx,model_type in enumerate(categories['Type']):
-    # Filter data for the current type & training size
-    subset = [
-        r for r in data
-        if r['Type'] == model_type
-        and r['Training Size'] == categories['Training Size'][-2] # take 5k training size
-        and r['Window Length'] in categories['Window Length']
-    ]
-
-    # Sort by Window Length for left-to-right plotting
-    subset.sort(key=lambda x: x['Window Length'])
-
-    # Extract x (Window Length) and y (loglike)
-    x_vals = [r['Window Length'] for r in subset]
-    y_vals = [r['results']['mae'] for r in subset]
-
-    # Plot if we have valid data
-    if x_vals and y_vals:
-        plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=f"{type_labels[model_type]}")
-
-# Labels, title, legend
-plt.xlabel("Prediction Horizon (L)")
-plt.ylabel("Delay MAE [ms]")
-plt.legend()
-plt.grid(True)
-
-# Adjust layout and save to PDF
-plt.tight_layout()
-plt.savefig(figures_path / "combined_mae_plot.pdf")
-plt.close()
-
-########################### MAE Plot ################################
-
-# For each window length, create and save a separate figure
-for w_length in categories['Window Length']:
-    # Create a new figure
-    plt.figure(figsize=(4, 2.5))
-
-    # Plot a line for each model type
-    for idx, model_type in enumerate(categories['Type']):
-        # Filter data for the current type & window length
-        subset = [
-            r for r in data
-            if r['Type'] == model_type
-            and r['Window Length'] == w_length
-            and r['Training Size'] in categories['Training Size']
-        ]
-
-        # Sort by Training Size for left-to-right plotting
-        subset.sort(key=lambda x: x['Training Size'])
-
-        # Extract x (Training Size) and y (loglike)
-        x_vals = [r['Training Size'] for r in subset]
-        y_vals = [r['results']['mae'] for r in subset]
-
-        # Plot if we have valid data
-        if x_vals and y_vals:
-            plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=type_labels[model_type])
-
-    # Labels, title, legend
-    plt.xlabel("Training Size [x1000 samples]")
-    plt.ylabel("Delay MAE [ms]")
-    plt.legend()
-    plt.grid(True)
-
-    # Adjust layout and save to PDF
-    plt.tight_layout()
-    plt.savefig(figures_path / f"mae_plot_w{w_length}.pdf")
-    plt.close()
+        # We only care about the fields in to_plot
+        model_dict['num_parameters'] = num_params
+        model_dict['training_time'] = training_time
+        model_dict['inference_time'] = inference_time
+        model_dict['results'] = results_json
 
 
 ########################### Training Time Plot ################################
@@ -442,12 +376,12 @@ for w_length in categories['Window Length']:
 plt.figure(figsize=(4, 2.5))
 
 # Plot a line for each model type
-for idx,model_type in enumerate(categories['Type']):
+for idx,model_type in enumerate(categories1['Type']):
     # Filter data for the current type & window length
     subset = [
-        r for r in data
+        r for r in data1
         if r['Type'] == model_type
-        and r['Training Size'] == categories['Training Size'][-1]
+        and r['Training Size'] == categories1['Training Size'][train_size_ind]
     ]
 
     # Sort by Training Size for left-to-right plotting
@@ -459,7 +393,28 @@ for idx,model_type in enumerate(categories['Type']):
 
     # Plot if we have valid data
     if x_vals and y_vals:
-        plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=type_labels[model_type])
+        plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=type_labels[model_type] + " Parallel")
+
+
+# Plot a line for each model type
+for idx,model_type in enumerate(categories1['Type']):
+    # Filter data for the current type & window length
+    subset = [
+        r for r in data2
+        if r['Type'] == model_type
+        and r['Training Size'] == categories2['Training Size'][train_size_ind]
+    ]
+
+    # Sort by Training Size for left-to-right plotting
+    subset.sort(key=lambda x: x['Window Length'])
+
+    # Extract x (Training Size) and y (loglike)
+    x_vals = [r['Window Length'] for r in subset]
+    y_vals = [r['training_time'] for r in subset]
+
+    # Plot if we have valid data
+    if x_vals and y_vals:
+        plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=type_labels[model_type] + " AutoRegressive")
 
 # Labels, title, legend
 plt.xlabel("Prediction Horizon (L)")
@@ -469,5 +424,5 @@ plt.grid(True)
 
 # Adjust layout and save to PDF
 plt.tight_layout()
-plt.savefig(figures_path / f"training_time_plot.pdf")
+plt.savefig(figures_path / f"training_time_plot_combined.pdf")
 plt.close()

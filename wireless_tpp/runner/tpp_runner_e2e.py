@@ -420,22 +420,86 @@ class TPPRunnerE2E():
         return eval_metrics
 
     def _gen_model(self, data_loader, **kwargs):
-        """Generation of the TPP, one-step and multi-step are both supported.
+        """Generation of the model on the test dataset.
         """
         
-        if kwargs.get('probability_generation', False):
-            test_result = self.run_one_epoch_probability_generation(data_loader, RunnerPhase.PREDICT)
-        else:
-            test_result = self.run_one_epoch_sample_generation(data_loader, RunnerPhase.PREDICT)
+        gen_results = self.run_one_epoch_gen(data_loader)
         
         if kwargs.get('return_predictions', False):
-            return test_result
+            return gen_results
         else:
             # save it to a pkl file
             model_dir = self.runner_config.base_config.specs['log_folder']
             logger.critical(f'Save prediction results to {Path(model_dir) / "pred.pkl"}')
-            save_pickle(Path(model_dir) / 'pred.pkl', test_result)
+            save_pickle(Path(model_dir) / 'pred.pkl', gen_results)
             return
+
+    def run_one_epoch_gen(self, data_loader):
+        """Run one complete epoch
+        we don't run any evaluation metrics here, just save the predictions
+
+        Args:
+            data_loader: data loader object defined in model runner
+
+        Returns:
+            a dict of metrics
+        """
+        phase = RunnerPhase.EVALUATE
+
+        results = []
+        for batch in data_loader:
+            # all are numpy arrays
+            loss, mask, (pred_mean, pred_var, pred_q5a, pred_q5b, pred_q7a, pred_q7b, pred_q9a, pred_q9b, pred_q99a, pred_q99b), label, (interarrival_time, packet_length) = \
+                self.model_wrapper.run_batch_mdn(batch, phase=phase)
+            
+            slot_seqs, len_seqs_transformed, mcs_seqs, mretx_seqs, rfailed_seqs, num_rbs_seqs, time_seqs, dtime_seqs_transformed, type_seqs, interarrival_time_seqs_transformed,label_mask_seqs, non_pad_mask, attention_mask = batch.values()
+
+            slot_seqs = slot_seqs.detach().cpu().numpy()
+            len_seqs_transformed = len_seqs_transformed.detach().cpu().numpy()
+            mcs_seqs = mcs_seqs.detach().cpu().numpy()
+            mretx_seqs = mretx_seqs.detach().cpu().numpy()
+            rfailed_seqs = rfailed_seqs.detach().cpu().numpy()
+            dtime_seqs_transformed = dtime_seqs_transformed.detach().cpu().numpy()
+            interarrival_time_seqs_transformed = interarrival_time_seqs_transformed.detach().cpu().numpy()
+
+            # assert that all the following have the same length (equals the batch size)
+            # print lens if assert fails
+            try:
+                assert len(pred_mean) == len(slot_seqs) == len(len_seqs_transformed) == len(mcs_seqs) == len(mretx_seqs) == len(rfailed_seqs) == len(dtime_seqs_transformed) == len(interarrival_time_seqs_transformed)
+                assert len(pred_mean) == len(pred_var) == len(pred_q5a) == len(pred_q5b) == len(pred_q7a) == len(pred_q7b) == len(pred_q9a) == len(pred_q9b) == len(pred_q99a) == len(pred_q99b)
+            except AssertionError:
+                print(f"Data lengths: slot_seqs={len(slot_seqs)}, len_seqs_transformed={len(len_seqs_transformed)}, mcs_seqs={len(mcs_seqs)}, mretx_seqs={len(mretx_seqs)}, rfailed_seqs={len(rfailed_seqs)}, dtime_seqs_transformed={len(dtime_seqs_transformed)}, interarrival_time_seqs_transformed={len(interarrival_time_seqs_transformed)}")
+                print(f"Prediction lengths: pred_mean={len(pred_mean)}, pred_var={len(pred_var)}, pred_q5a={len(pred_q5a)}, pred_q5b={len(pred_q5b)}, pred_q7a={len(pred_q7a)}, pred_q7b={len(pred_q7b)}, pred_q9a={len(pred_q9a)}, pred_q9b={len(pred_q9b)}, pred_q99a={len(pred_q99a)}, pred_q99b={len(pred_q99b)}")
+                raise
+
+            for seq_num in range(len(pred_mean)):
+                result_dict = {
+                    'src_seqs_len': self.model_wrapper.model.src_seq_len,
+                    'tgt_seqs_len': self.model_wrapper.model.tgt_seq_len,
+                    'features' : {
+                        'slot_seqs': slot_seqs[seq_num],
+                        'len_seqs': len_seqs_transformed[seq_num],
+                        'mcs_seqs': mcs_seqs[seq_num],
+                        'mretx_seqs': mretx_seqs[seq_num],
+                        'rfailed_seqs': rfailed_seqs[seq_num],
+                        'interarrival_time_seqs': interarrival_time_seqs_transformed[seq_num]
+                    },
+                    'labels' : dtime_seqs_transformed[seq_num],
+                    'predictions' : {
+                        'pred_mean': pred_mean[seq_num],
+                        'pred_var': pred_var[seq_num],
+                        'pred_q5a': pred_q5a[seq_num],
+                        'pred_q5b': pred_q5b[seq_num],
+                        'pred_q7a': pred_q7a[seq_num],
+                        'pred_q7b': pred_q7b[seq_num],
+                        'pred_q9a': pred_q9a[seq_num],
+                        'pred_q9b': pred_q9b[seq_num],
+                        'pred_q99a': pred_q99a[seq_num],
+                        'pred_q99b': pred_q99b[seq_num]
+                    }
+                }
+                results.append(result_dict)
+        return results
 
     def run_one_epoch(self, data_loader, phase):
         """Run one complete epoch.
@@ -447,11 +511,19 @@ class TPPRunnerE2E():
         Returns:
             a dict of metrics
         """
+        #ia_intervals = {
+        #    '100' : [90,110], # category 1
+        #    '50' : [45,55], # category 2
+        #    '20' : [18,22], # category 3
+        #    '10' : [8,12] # category 4
+        #}
         ia_intervals = {
             '100' : [90,110], # category 1
             '50' : [45,55], # category 2
-            '20' : [18,22], # category 3
-            '10' : [8,12] # category 4
+            '25' : [24,26], # category 3
+            '20' : [19,21], # category 4
+            '15' : [14,16], # category 5
+            '10' : [8,12] # category 6
         }
         ia_trackers = [ (ResultsTracker(postfix=''),ResultsTracker(postfix='_sw',axis=0)) for _ in ia_intervals.keys() ]
         overall_tracker = ResultsTracker(postfix='')
@@ -516,62 +588,5 @@ class TPPRunnerE2E():
                 ia_overall_tracker.report_metrics(ia_result_dict, no_loglike_num_events=False)
                 ia_seq_tracker.report_metrics(ia_result_dict, no_loglike_num_events=False)
                 metrics_dict['ia_'+ia_interval_key] = ia_result_dict
-
-        return metrics_dict
-    
-    def run_one_epoch_probability_generation(self, data_loader, phase):
-        """Run one complete epoch and store the intensity values.
-
-        Args:
-            data_loader: data loader object defined in model runner
-            phase: enum, [train, dev, test]
-
-        Returns:
-            a dict of results
-        """
-
-        probs_pred = []
-        epoch_label = []
-        masks = []
-        metrics_dict = OrderedDict()
-        if phase is not RunnerPhase.PREDICT:
-            return
-        
-        for batch in data_loader:
-            batch_probs, batch_label, batch_masks = self.model_wrapper.run_batch_probability_generation_scheduling(batch, phase=phase)
-            probs_pred.append(batch_probs)
-            epoch_label.append(batch_label)
-            masks.append(batch_masks)
-
-        metrics_dict.update({'pred': probs_pred, 'label': epoch_label, 'mask': masks})
-
-        return metrics_dict
-    
-    def run_one_epoch_sample_generation(self, data_loader, phase):
-        """Run one complete epoch and store the intensity values.
-
-        Args:
-            data_loader: data loader object defined in model runner
-            phase: enum, [train, dev, test]
-
-        Returns:
-            a dict of results
-        """
-
-        samples_pred = []
-        epoch_label = []
-        masks = []
-        metrics_dict = OrderedDict()
-        if phase is not RunnerPhase.PREDICT:
-            return
-        
-        for batch in data_loader:
-            batch_samples, batch_label, batch_mask = self.model_wrapper.run_batch_sample_generation_scheduling(batch, phase=phase)
-            samples_pred.append(batch_samples)
-            epoch_label.append(batch_label)
-            masks.append(batch_mask)
-
-        if phase == RunnerPhase.PREDICT:
-            metrics_dict.update({'pred': samples_pred, 'label': epoch_label, 'mask': masks})
 
         return metrics_dict

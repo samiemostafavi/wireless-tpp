@@ -33,6 +33,8 @@ results/
 figures/
 figures_*/
 data/
+data_*/
+tmp/
 *.lseq
 *.parquet
 

@@ -10,6 +10,7 @@ import math
 import numpy as np
 import re
 
+
 # Define markers for different model types
 markers = ['o', 's', '^', 'D', 'v', 'p', '*', 'h', '+', 'x']
 
@@ -28,27 +29,39 @@ plt.rcParams.update({
 })
 
 # Path to the `data` directory
-base_path = Path("./data/intervals_final_results/e2e/prediction_results")
+#base_path = Path("./data/intervals_results/e2e/prediction_results")
+#base_path = Path("./data/intervals_final_results/e2e/prediction_results")
+base_path = Path("./data/s61-64_results/e2e/prediction_results")
 
-figures_path = Path("./figures")
+#figures_path = Path("./figures_intervals")
+#figures_path = Path("./figures_intervals_final")
+#figures_path = Path("./figures_s61-64_NEW")
+figures_path = Path("./figures_s61-64_EXC")
+
+
+# for the combined plots, set which number of samples to plot
+train_size_ind = -2 # -1: 10k, -2: 5k, -3: 2.5k, -4: 1k
+
 # Create the figures directory if it doesn't exist
 figures_path.mkdir(parents=True, exist_ok=True)
 
 # Categories and history lengths to plot
 categories = {
     'Training Size': [1, 2.5, 5, 10],
-    'Type' : ['lstm', 'transformer'], # 'mlp', 'lstm', 'transformer', 'lstmmlp', 'transformermlp'
+    'Type' : ['mlp', 'lstm', 'lstmsingle', 'transformer'], # 'mlp', 'lstm', 'transformer', 'lstmmlp', 'transformermlp'
     'Window Length': [5, 20, 50, 100],
-    'Auxiliary': [] # 't8', 't12', 't20', 't24', 'noretx'
+    'Auxiliary': ["NEW"] # 't8', 't12', 't20', 't24', 'noretx'
 }
 
 type_labels = {
     'mlp': 'MLP',
     'lstm': 'LSTM',
+    'lstmsingle': 'LSTM-SS',
     'transformer': 'Transformer',
     'lstmmlp': 'LSTM-MLP',
     'transformermlp': 'Transformer-MLP'
 }
+
 
 # Plot these
 to_plot = {
@@ -280,49 +293,154 @@ for model_dict in data:
         model_dict['inference_time'] = inference_time
         model_dict['results'] = results_json
 
-# ---------------------------------------------------------------------------
-# Loglike Plot
-# ---------------------------------------------------------------------------
+########################### Combined Plot Loglike ################################
+
+# Create a new figure for combined plots
+plt.figure(figsize=(4, 2.5))
+
+# Plot a line for each model type and training size
+for idx, model_type in enumerate(categories['Type']):
+    # Filter data for the current type & training size
+    subset = [
+        r for r in data
+        if r['Type'] == model_type
+        and r['Training Size'] == categories['Training Size'][train_size_ind] # take 5k training size
+        and r['Window Length'] in categories['Window Length']
+    ]
+
+    # Sort by Window Length for left-to-right plotting
+    subset.sort(key=lambda x: x['Window Length'])
+
+    # Extract x (Window Length) and y (loglike)
+    x_vals = [r['Window Length'] for r in subset]
+    y_vals = [-r['results']['loglike'] for r in subset]
+
+    # Plot if we have valid data
+    if x_vals and y_vals:
+        plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=f"{type_labels[model_type]}")
+
+# Labels, title, legend
+plt.xlabel("Prediction Horizon (L)")
+plt.ylabel("Standardized NLL")
+plt.legend()
+plt.grid(True)
+
+# Adjust layout and save to PDF
+plt.tight_layout()
+plt.savefig(figures_path / "combined_loglike_plot.pdf")
+plt.close()
+
+########################### NLL Plot ################################
 
 # For each window length, create and save a separate figure
+for w_length in categories['Window Length']:
+    # Create a new figure
+    plt.figure(figsize=(4, 2.5))
 
-packet_ias = [10,20,50,100]
-ia_keys = ["ia_10", "ia_20", "ia_50", "ia_100"]
+    # Plot a line for each model type
+    for idx, model_type in enumerate(categories['Type']):
+        # Filter data for the current type & window length
+        subset = [
+            r for r in data
+            if r['Type'] == model_type
+            and r['Window Length'] == w_length
+            and r['Training Size'] in categories['Training Size']
+        ]
 
-for train_size in categories['Training Size']:
-    for w_length in categories['Window Length']:
-        # Create a new figure
-        plt.figure(figsize=(3.5, 2.5))
+        # Sort by Training Size for left-to-right plotting
+        subset.sort(key=lambda x: x['Training Size'])
 
-        # Plot a line for each model type
-        for idx, model_type in enumerate(categories['Type']):
-            # Filter data for the current type & window length
-            subset = [
-                r for r in data
-                if r['Type'] == model_type
-                and r['Window Length'] == w_length
-                and r['Training Size'] == train_size
-            ]
-            assert len(subset) == 1
-            # Extract x (Training Size) and y (loglike)
-            x_vals = packet_ias
-            y_vals = [
-                -subset[0]['results']['ia_10']['loglike'], 
-                -subset[0]['results']['ia_20']['loglike'], 
-                -subset[0]['results']['ia_50']['loglike'],
-                -subset[0]['results']['ia_100']['loglike']
-            ]
+        # Extract x (Training Size) and y (loglike)
+        x_vals = [r['Training Size'] for r in subset]
+        y_vals = [-r['results']['loglike'] for r in subset]
 
-            # Plot if we have valid data
+        # Plot if we have valid data
+        if x_vals and y_vals:
             plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=type_labels[model_type])
 
-        # Labels, title, legend
-        plt.xlabel("Packet Interarrival Time [ms]")
-        plt.ylabel("Standardized NLL")
-        plt.legend()
-        plt.grid(True)
+    # Labels, title, legend
+    plt.xlabel("Training Size [x1000 samples]")
+    plt.ylabel("Standardized NLL")
+    plt.legend()
+    plt.grid(True)
 
-        # Adjust layout and save to PDF
-        plt.tight_layout()
-        plt.savefig(figures_path / f"ia_loglike_s{train_size}_w{w_length}.pdf")
-        plt.close()
+    # Adjust layout and save to PDF
+    plt.tight_layout()
+    plt.savefig(figures_path / f"loglike_plot_w{w_length}.pdf")
+    plt.close()
+
+########################### Combined MAE Plot ################################
+
+# Create a new figure for combined plots
+plt.figure(figsize=(4, 2.5))
+
+# Plot a line for each model type and training size
+for idx,model_type in enumerate(categories['Type']):
+    # Filter data for the current type & training size
+    subset = [
+        r for r in data
+        if r['Type'] == model_type
+        and r['Training Size'] == categories['Training Size'][train_size_ind] # take 5k training size
+        and r['Window Length'] in categories['Window Length']
+    ]
+
+    # Sort by Window Length for left-to-right plotting
+    subset.sort(key=lambda x: x['Window Length'])
+
+    # Extract x (Window Length) and y (loglike)
+    x_vals = [r['Window Length'] for r in subset]
+    y_vals = [r['results']['mae'] for r in subset]
+
+    # Plot if we have valid data
+    if x_vals and y_vals:
+        plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=f"{type_labels[model_type]}")
+
+# Labels, title, legend
+plt.xlabel("Prediction Horizon (L)")
+plt.ylabel("Delay MAE [ms]")
+plt.legend()
+plt.grid(True)
+
+# Adjust layout and save to PDF
+plt.tight_layout()
+plt.savefig(figures_path / "combined_mae_plot.pdf")
+plt.close()
+
+########################### MAE Plot ################################
+
+# For each window length, create and save a separate figure
+for w_length in categories['Window Length']:
+    # Create a new figure
+    plt.figure(figsize=(4, 2.5))
+
+    # Plot a line for each model type
+    for idx, model_type in enumerate(categories['Type']):
+        # Filter data for the current type & window length
+        subset = [
+            r for r in data
+            if r['Type'] == model_type
+            and r['Window Length'] == w_length
+            and r['Training Size'] in categories['Training Size']
+        ]
+
+        # Sort by Training Size for left-to-right plotting
+        subset.sort(key=lambda x: x['Training Size'])
+
+        # Extract x (Training Size) and y (loglike)
+        x_vals = [r['Training Size'] for r in subset]
+        y_vals = [r['results']['mae'] for r in subset]
+
+        # Plot if we have valid data
+        if x_vals and y_vals:
+            plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=type_labels[model_type])
+
+    # Labels, title, legend
+    plt.xlabel("Training Size [x1000 samples]")
+    plt.ylabel("Delay MAE [ms]")
+    plt.legend()
+    plt.grid(True)
+
+    # Adjust layout and save to PDF
+    plt.tight_layout()
+    plt.savefig(figures_path / f"mae_plot_w{w_length}.pdf")
+    plt.close()

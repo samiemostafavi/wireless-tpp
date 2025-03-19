@@ -10,6 +10,9 @@ import math
 import numpy as np
 import re
 
+# Define markers for different model types
+markers = ['o', 's', '^', 'D', 'v', 'p', '*', 'h', '+', 'x']
+
 # Ensure IEEE-compliant font and style
 # IEEE Transactions format settings
 plt.rcParams.update({
@@ -25,26 +28,28 @@ plt.rcParams.update({
 })
 
 # Path to the `data` directory
-base_path = Path("./data/intervals_final_results/e2e/prediction_results")
+base_path = Path("./data/intervals_results/e2e/prediction_results")
+#base_path = Path("./data/intervals_final_results/e2e/prediction_results")
 
-figures_path = Path("./figures")
+figures_path = Path("./figures_intervals")
+#figures_path = Path("./figures_intervals_final")
+
 # Create the figures directory if it doesn't exist
 figures_path.mkdir(parents=True, exist_ok=True)
 
 # Categories and history lengths to plot
 categories = {
-    'Training Size': [5],
-    'Type' : ['transformer'], # 'mlp', 'lstm', 'transformer', 'lstmmlp', 'transformermlp'
-    'Window Length': [50],
-    'Auxiliary': ['t8', 't12', 't16', 't20', 't24'] # 't8', 't12', 't20', 't24', 'noretx'
+    'Training Size': [1, 2.5, 5, 10],
+    'Type' : ['lstm', 'transformer'], # 'mlp', 'lstmsingle', 'lstm', 'transformer'
+    'Window Length': [5, 20, 50, 100],
+    'Auxiliary': ["NEW"] # 't8', 't12', 't20', 't24', 'noretx'
 }
 
 type_labels = {
     'mlp': 'MLP',
+    'lstmsingle': 'LSTM-SS',
     'lstm': 'LSTM',
-    'transformer': 'Transformer',
-    'lstmmlp': 'LSTM-MLP',
-    'transformermlp': 'Transformer-MLP'
+    'transformer': 'Transformer'
 }
 
 # Plot these
@@ -277,61 +282,44 @@ for model_dict in data:
         model_dict['inference_time'] = inference_time
         model_dict['results'] = results_json
 
+# ---------------------------------------------------------------------------
+# Loglike Plot
+# ---------------------------------------------------------------------------
 
-###############################################################################
-########################### Token Size Plot ###################################
-###############################################################################
+# For each window length, create and save a separate figure
 
-# Create a new figure
-plt.figure(figsize=(3.5, 2.5))
+#packet_ias = [10, 15, 20, 25, 50, 100]
+#ia_keys = ["ia_10", "ia_15", "ia_20", "ia_25", "ia_50", "ia_100"]
+packet_ias = [10, 20, 50, 100]
+ia_keys = ["ia_10", "ia_20", "ia_50", "ia_100"]
 
-# Filter data for the current type & window length
-subset = [
-    r for r in data
-    if r['Type'] == categories['Type'][-1]
-    and r['Window Length'] == categories['Window Length'][-1]
-    and r['Training Size'] == categories['Training Size'][-1]
-]
+for train_size in categories['Training Size']:
+    for w_length in categories['Window Length']:
+        # Create a new figure
+        plt.figure(figsize=(4, 2.5))
 
-# iterate over all items in subset and convert t8, t12, t20, t24 to integers
-for r in subset:
-    # remove the first character 't' and convert to integer
-    r['Auxiliary'] = int(r['Auxiliary'][1:])
+        # Plot a line for each model type
+        for idx, model_type in enumerate(categories['Type']):
+            # Filter data for the current type & window length
+            subset = [
+                r for r in data
+                if r['Type'] == model_type
+                and r['Window Length'] == w_length
+                and r['Training Size'] == train_size
+            ]
+            assert len(subset) == 1
+            # Extract x (Training Size) and y (loglike)
+            x_vals = packet_ias
+            y_vals = [-subset[0]['results'][key]['loglike'] for key in ia_keys]
+            plt.plot(x_vals, y_vals, marker=markers[idx % len(markers)], label=type_labels[model_type])
 
-aux_values = [r['Auxiliary'] for r in subset]
-# Sort by Auxiliary for left-to-right plotting
-subset.sort(key=lambda x: x['Auxiliary'])
+        # Labels, title, legend
+        plt.xlabel("Packet Interarrival Time [ms]")
+        plt.ylabel("Standardized NLL")
+        plt.legend()
+        plt.grid(True)
 
-# Extract x (Training Size) and y (loglike)
-x_vals = [r['Auxiliary'] for r in subset]
-y_vals = [r['results']['loglike'] for r in subset]
-y2_vals = [r['num_parameters']/1000 for r in subset]
-fig, ax1 = plt.subplots(figsize=(4, 2.5))
-
-# Plot if we have valid data
-if x_vals and y_vals:
-    ax1.plot(x_vals, y_vals, marker='o', label="Standardized NLL", color='C1')
-
-# Labels, title, legend for the first y-axis
-ax1.set_xlabel("Token size [tensor]")
-ax1.set_ylabel("Standardized NLL")
-ax1.tick_params(axis='y', labelcolor='black')
-ax1.set_xticks(aux_values)
-ax1.grid(True)
-
-# Create a second y-axis
-ax2 = ax1.twinx()
-ax2.plot(x_vals, y2_vals, marker='s', label="Number of Parameters", color='C2')
-ax2.set_ylabel("Number of Parameters [x1000]")
-ax2.set_xticks(aux_values)
-ax2.tick_params(axis='y', labelcolor='black')
-
-# Combine legends
-lines, labels = ax1.get_legend_handles_labels()
-lines2, labels2 = ax2.get_legend_handles_labels()
-ax1.legend(lines + lines2, labels + labels2, loc='upper left')
-
-# Adjust layout and save to PDF
-fig.tight_layout()
-plt.savefig(figures_path / f"token_plot.pdf")
-plt.close()
+        # Adjust layout and save to PDF
+        plt.tight_layout()
+        plt.savefig(figures_path / f"ia_loglike_s{train_size}_w{w_length}.pdf")
+        plt.close()

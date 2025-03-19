@@ -90,7 +90,7 @@ mlp_100:
         include_mretx: True
         include_rfailed: True
 
-lstmsingle_100_NEW:
+lstmsingle_100:
   base_config:
     stage: train
     backend: torch
@@ -136,7 +136,7 @@ lstmsingle_100_NEW:
       tgt_seq_len: 100
       src_seq_len: 100
       embeddings:
-        include_prev_dtime: False
+        include_prev_dtime: True
         include_interarrival_time: True
         include_time: False # False always
         include_len: False
